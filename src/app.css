@@ -1,0 +1,156 @@
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+}
+
+* {
+    font-family: 'Inter', sans-serif;
+}
+
+span {
+    font-family: inherit;
+    font-weight: inherit;
+}
+
+a {
+    text-decoration: none;
+    color: black;
+}
+
+a:hover {
+    text-decoration: underline;
+    text-decoration-color: #ff6700;
+    text-decoration-thickness: 3px;
+}
+
+.active {
+    text-decoration: underline;
+    text-decoration-color: #ff6700;
+    text-decoration-thickness: 3px;
+}
+
+button {
+    cursor: pointer;
+    color: black;
+    padding: 5px 15px;
+    border: 1px solid #ff6700;
+    border-radius: 4px;
+    background-color: white;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: 1.1px;
+}
+
+button:hover {
+    background-color: #ff6700;
+}
+
+.auth-container {
+    z-index: 102;
+    padding: 60px;
+    background: white;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin-right: -50%;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.15);
+    min-width: 300px;
+    /* height: 200px; */
+}
+
+.input {
+    display: block;
+    margin-top: 5px;
+    margin-bottom: 20px;
+    padding: 5px;
+    width: 300px;
+}
+
+.close {
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    width: 25;
+    height: 25;
+    border-style: none;
+    background-color: transparent;
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.5;
+}
+
+button:disabled:hover {
+    background-color: white;
+}
+
+.page-container {
+    padding: 30px;
+}
+
+.card {
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 30px;
+}
+
+.card-content {
+    padding: 30px;
+}
+
+.shadow {
+    border: 1px solid black;
+    box-shadow: 7px 7px #ff6700;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 50px 50px;
+}
+
+.project-photo-container {
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    display: flex;
+    /* height: 300px; */
+}
+
+.project-photo {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: contain;
+    display: block;
+}
+
+.project-tile {}
+
+
+.project-title {
+    font-size: 1em;
+    font-weight: bold;
+    margin-top: 1.75%;
+    margin-left: 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.author {
+    margin-left: 5px;
+}
+
+.padding-bottom-std {
+    padding-bottom: 3.5%;
+}
+
+.padding-bottom-half {
+    padding-bottom: 1.75%;
+}
