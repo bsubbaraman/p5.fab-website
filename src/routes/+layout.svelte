@@ -1,11 +1,21 @@
 <script>
 	import '../app.css';
-	import Footer from '../components/Footer.svelte';
 	import { onMount } from 'svelte';
 	import { auth, db } from '../dbConfig';
 	import { getDoc, doc, setDoc } from 'firebase/firestore';
-	import { store } from '../store/store';
+	import { store } from '../store/state.svelte.js';
+	import { setupMessages } from '$lib/setupMessages.js';
 
+	async function getAllPostsData() {
+		const allPostsRef = doc(db, 'posts', 'allPosts');
+		const allPostsSnap = await getDoc(allPostsRef);
+
+		if (allPostsSnap.exists()) {
+			store.allPostsData = allPostsSnap.data();
+		} else {
+			console.log('No such document!');
+		}
+	}
 	onMount(() => {
 		console.log('Mounting');
 		const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -28,24 +38,16 @@
 				const userData = docSnap.data();
 				dataToSetToStore = userData;
 			}
-			console.log('favorites', dataToSetToStore.favorites);
-			store.update((curr) => {
-				return {
-					...curr,
-					user,
-					favorites: dataToSetToStore.favorites,
-					data: dataToSetToStore,
-					loading: false
-				};
-			});
+
+			store.user = user;
+			store.favorites = dataToSetToStore.favorites;
+			store.data = dataToSetToStore;
+			store.loading = false;
 		});
+
+		setupMessages();
+		getAllPostsData();
 	});
 </script>
 
 <slot />
-<Footer />
-
-<!-- header
-hero
-gallery
-footer -->

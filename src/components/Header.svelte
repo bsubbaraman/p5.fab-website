@@ -1,31 +1,9 @@
 <script>
 	import { page } from '$app/state';
+	import { store, authHandlers } from '../store/state.svelte.js';
+	import { toggleAuthContainer, signOut } from '$lib/events/auth.js';
 	import SignIn from './SignIn.svelte';
-	import { store } from '../store/store';
-	import { authHandlers } from '../store/store';
 	import SignUp from './SignUp.svelte';
-
-	let authenticating = false;
-
-	function toggleAuthContainer() {
-		$store.displayLogin = !$store.displayLogin;
-	}
-
-	async function handleAuthentication() {
-		console.log('click');
-		if (authenticating) {
-			return;
-		}
-		try {
-			await authHandlers.logout();
-		} catch (err) {
-			console.log('Authentication error', err);
-		}
-		authenticating = true;
-		$store.user = null;
-		$store.displayLogin = false;
-		$store.displaySignUp = false;
-	}
 </script>
 
 <header>
@@ -39,26 +17,32 @@
 				<a href="/explore" class:active={page.url.pathname == '/explore'}>Explore</a>
 			</div>
 			<div class="menu-item">
-				<a href="https://machineagency.github.io/p5.fab-docs/" target="_blank">Docs</a>
+				<a href="/sketch/new" class:active={page.url.pathname == '/create'}>Create</a>
 			</div>
 			<div class="menu-item">
-				<a>About</a>
+				<a href="https://machineagency.github.io/p5.fab-docs/" target="_blank">Docs</a>
 			</div>
-			{#if !$store.user}
-				<div class="menu-item">
-					<a on:click={toggleAuthContainer}>Sign In</a>
-				</div>
-			{:else}
+
+			{#if store.user}
 				<div class="menu-item">
 					<div class="dropdown">
 						<a href="/share" class:active={page.url.pathname == '/share'}>Share</a>
 					</div>
 				</div>
+			{/if}
+			<div class="menu-item">
+				<a>About</a>
+			</div>
+			{#if !store.user}
+				<div class="menu-item">
+					<a onclick={toggleAuthContainer}>Sign In</a>
+				</div>
+			{:else}
 				<div class="menu-item">
 					<div class="dropdown">
-						<a href="/users/{$store.user.uid}" class="profile">Profile</a>
+						<a href="/users/{store.user.uid}" class="profile">Profile</a>
 						<div class="dropdown-content">
-							<a on:click={handleAuthentication}>Sign Out</a>
+							<button onclick={signOut} class="dropdownBtn">Sign Out</button>
 						</div>
 					</div>
 				</div>
@@ -67,8 +51,8 @@
 	</div>
 </header>
 
-{#if !$store.user && $store.displayLogin}
-	{#if $store.displaySignUp}
+{#if !store.user && store.displayLogin}
+	{#if store.displaySignUp}
 		<SignUp />
 	{:else}
 		<SignIn />
@@ -84,26 +68,16 @@
 		right: 0px;
 		height: 10vh;
 		min-height: 1.75em;
-		box-shadow: 0 1px 3px 0 grey;
+		border-bottom: 1px solid black;
+		/* box-shadow: 0 1px 3px 0 grey; */
 	}
 
-	.nav-text {
-		left: 0px;
-		right: 0px;
-		z-index: 0;
-		margin-top: 0px;
-		margin-bottom: 0px;
-
-		font-size: 19px;
-		line-height: 0px;
-		font-weight: 400;
-		text-align: center;
-	}
 	.nav-left {
 		display: flex;
 		align-items: center;
 		margin-left: 10px;
 	}
+
 	.nav-right {
 		display: flex;
 		align-items: center;
@@ -131,18 +105,21 @@
 		padding: 3px;
 	}
 
+	.dropdown {
+		position: relative;
+		display: inline-block;
+	}
+
 	.dropdown-content {
 		visibility: hidden;
 		display: block;
 		position: absolute;
-		background-color: #f9f9f9;
-		width: 150%;
-		height: 150%;
+		right: 0;
+		top: 1.5em;
+		background-color: var(--nord5);
+		min-width: 100px;
+		box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
 		z-index: 1;
-		padding: 10px;
-		top: 30px;
-		right: 5%;
-		overflow-y: hidden;
 	}
 
 	.dropdown-content:hover {
@@ -155,5 +132,26 @@
 
 	.profile:hover + .dropdown-content {
 		visibility: visible;
+	}
+
+	.dropdownBtn {
+		width: 100%;
+		background: none;
+		border: none;
+		font-size: 0.8em;
+		padding: 10px 4px;
+		text-decoration: none;
+		display: block;
+		padding-left: 10px;
+		padding-right: 10px;
+		cursor: pointer;
+		font-family: 'Inter', sans-serif;
+		text-align: center;
+		letter-spacing: normal;
+	}
+
+	.dropdownBtn:hover {
+		color: var(--white);
+		background-color: var(--nord3);
 	}
 </style>

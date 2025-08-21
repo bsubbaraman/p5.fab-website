@@ -1,13 +1,56 @@
+:root {
+    --nord-darker: #1e222a;
+    --nord0: #2e3440;
+    --nord1: #3b4252;
+    --nord2: #434c5e;
+    --nord3: #4c566a;
+    --nord4: #d8dee9;
+    --nord5: #e5e9f0;
+    --nord6: #eceff4;
+    --nord7: #8fbcbb;
+    --nord8: #88c0d0;
+    --nord9: #81a1c1;
+    --nord10: #5e81ac;
+    --black: #2e3440;
+    --white: #eceff4;
+    --pink: #e892b2;
+    --red: #bf616a;
+    --orange: #d08770;
+    --yellow: #ebcb8b;
+    --green: #090e05;
+    --cyan: #88c0d0;
+    --blue: #5e81ac;
+    --purple: #b48ead;
+    --remix: #0098FF;
+    --ma-orange: #FF6700;
+}
+
 html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
     scroll-behavior: smooth;
 }
 
 body {
+    height: 100%;
     margin: 0;
 }
 
-* {
+main {
     font-family: 'Inter', sans-serif;
+    height: 100%;
+    width: 100%;
+    overflow: scroll;
+}
+
+.page-container {
+    font-family: 'Inter', sans-serif;
+}
+
+.nav-bar {
+    font-family: 'Inter', sans-serif;
+
 }
 
 span {
@@ -22,13 +65,17 @@ a {
 
 a:hover {
     text-decoration: underline;
-    text-decoration-color: #ff6700;
+    text-decoration-color: var(--ma-orange);
     text-decoration-thickness: 3px;
+}
+
+.shadowRemix a:hover {
+    text-decoration-color: var(--remix);
 }
 
 .active {
     text-decoration: underline;
-    text-decoration-color: #ff6700;
+    text-decoration-color: var(--ma-orange);
     text-decoration-thickness: 3px;
 }
 
@@ -36,7 +83,7 @@ button {
     cursor: pointer;
     color: black;
     padding: 5px 15px;
-    border: 1px solid #ff6700;
+    border: 1px solid var(--ma-orange);
     border-radius: 4px;
     background-color: white;
     font-size: 16px;
@@ -45,11 +92,20 @@ button {
 }
 
 button:hover {
-    background-color: #ff6700;
+    background-color: var(--ma-orange);
 }
 
+button:disabled {
+    opacity: 0.5;
+}
+
+button:disabled:hover {
+    background-color: white;
+}
+
+
 .auth-container {
-    z-index: 102;
+    z-index: 105;
     padding: 60px;
     background: white;
     position: fixed;
@@ -81,14 +137,6 @@ button:hover {
     cursor: pointer;
 }
 
-button:disabled {
-    opacity: 0.5;
-}
-
-button:disabled:hover {
-    background-color: white;
-}
-
 .page-container {
     padding: 30px;
 }
@@ -101,12 +149,30 @@ button:disabled:hover {
 }
 
 .card-content {
+    position: relative;
     padding: 30px;
 }
 
 .shadow {
     border: 1px solid black;
-    box-shadow: 7px 7px #ff6700;
+    box-shadow: 7px 7px var(--ma-orange);
+    transition: box-shadow 0.3s;
+}
+
+.shadowRemix {
+    border: 1px solid black;
+    box-shadow: 7px 7px var(--remix);
+    transition: box-shadow 0.3s;
+}
+
+.shadow:not(.nohover):hover {
+    /* transform: rotate(5deg); */
+    box-shadow: 15px 15px var(--ma-orange);
+}
+
+.shadowRemix:not(.nohover):hover {
+    /* transform: rotate(5deg); */
+    box-shadow: 15px 15px var(--remix);
 }
 
 .grid {
@@ -115,12 +181,18 @@ button:disabled:hover {
     gap: 50px 50px;
 }
 
+.remix-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 50px 50px;
+}
+
 .project-photo-container {
     align-items: center;
     justify-content: center;
     overflow: hidden;
     display: flex;
-    /* height: 300px; */
+    position: relative;
 }
 
 .project-photo {
@@ -153,4 +225,252 @@ button:disabled:hover {
 
 .padding-bottom-half {
     padding-bottom: 1.75%;
+}
+
+.overlayText {
+    /* display: none; */
+    opacity: 0;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    background-color: var(--remix);
+    color: black;
+    padding: 5px 10px;
+    font-size: 16px;
+    transition: opacity 0.2s linear;
+}
+
+.shadowRemix:hover .overlayText {
+    /* display: block; */
+    opacity: 1;
+}
+
+/* Remix Tree */
+/* .forkEntry {
+    width: 100%;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.forkImageMain {
+    width: 85px;
+    border: 2px solid black;
+}
+
+.forkImage {
+    width: 75px;
+    border: 2px solid black;
+}
+
+.forkEntryLabel {
+    margin-left: 10px;
+    flex: 1;
+    font-size: 0.85em;
+} */
+/* Credit: https://fractaledmind.github.io/2018/03/09/css-tree-experiments/ */
+.tree,
+.tree ul,
+.tree ol {
+    list-style: none;
+    display: inline-flex;
+}
+
+.tree,
+.tree * {
+    margin: 0;
+    padding: 0;
+}
+
+.tree li {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.tree li::before {
+    content: '';
+    position: absolute;
+}
+
+.tree li::after {
+    content: '';
+    position: absolute;
+}
+
+.tree ul,
+.tree ol {
+    position: relative;
+}
+
+.tree ul::before,
+.tree ol::before {
+    content: '';
+    position: absolute;
+}
+
+.tree span {
+    border: 2px solid black;
+    max-width: 150px;
+    height: 35px;
+    text-align: left;
+    padding: 0.5em 1em;
+    font-size: 0.85em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 5px 5px var(--nord3);
+}
+
+.tree span.current {
+    box-shadow: 5px 5px lightgreen;
+}
+
+.tree span:not(.current):hover {
+    box-shadow: 5px 5px lightblue;
+}
+
+.tree>li {
+    padding: 0;
+}
+
+.tree>li::before,
+.tree>li::after {
+    display: none;
+}
+
+.tree.-stacked,
+.tree.-stacked ul,
+.tree.-stacked ol {
+    flex-direction: column;
+}
+
+.tree.-stacked li {
+    flex-direction: column;
+    align-items: start;
+    padding-left: 10px;
+    padding-right: 0;
+    padding-top: 10px;
+    padding-bottom: 0;
+}
+
+.tree.-stacked li::before {
+    top: 33px;
+    left: 0px;
+    border-top: 2px solid;
+    width: 10px;
+
+}
+
+.tree.-stacked li::after {
+    top: 0;
+    bottom: unset;
+    left: 0px;
+    border-left: 2px solid black;
+    height: 100%;
+}
+
+/* .tree.-stacked li:first-of-type {
+    color: green;
+}
+
+.tree.-stacked li:last-of-type {
+    color: red;
+} */
+
+.tree.-stacked li:first-of-type::after {
+    /* border-right: 1px solid green; */
+    /* height: 100%; */
+    /* height: calc(50% + 1vh - 1px); */
+}
+
+.tree.-stacked li:last-of-type::after {
+    border-left: 2px solid black;
+    height: 35px;
+    /* height: calc(50% + 1vh - 1px); */
+}
+
+/* .tree.-stacked li:not(:first-of-type):not(:last-of-type)::after {
+} */
+
+.tree a {
+    font-weight: bold;
+}
+
+.tree a:hover {
+    text-decoration: none;
+}
+
+/* CODEMIRROR */
+.cm-editor .cm-content {
+    padding-top: 0px;
+    font-family: "Roboto Mono", monospace;
+    font-size: 1em;
+}
+
+.cm-editor .cm-gutterElement {
+    /* padding: 0 0 0 0; */
+    font-family: "Roboto Mono", monospace;
+    font-size: 1em;
+}
+
+.codemirror-wrapper {
+    width: 100%;
+    height: 100%;
+}
+
+/* SPLITJS */
+.split {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+#left {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    /* For top/bottom split inside left */
+}
+
+#left-top,
+#left-bottom {
+    /* height: 50%; */
+    /* Or let Split.js set this inline */
+    width: 100%;
+}
+
+#editor {
+    height: 100%;
+    width: 100%;
+}
+
+.gutter {
+    background-color: #eee;
+    background-repeat: no-repeat;
+    background-position: 50%;
+}
+
+.gutter.gutter-horizontal {
+    cursor: col-resize;
+}
+
+.gutter.gutter-vertical {
+    cursor: row-resize;
+}
+
+.gutter.gutter-horizontal {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAIklEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeMwF+yNnOs5KSvgAAAABJRU5ErkJggg==');
+    cursor: col-resize;
+}
+
+.gutter.gutter-vertical {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAIklEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeMwF+yNnOs5KSvgAAAABJRU5ErkJggg==');
+    cursor: row-resize;
+}
+
+.flash-code-on {
+    background-color: var(--ma-orange);
 }

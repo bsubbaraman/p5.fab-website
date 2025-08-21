@@ -1,5 +1,5 @@
 <script>
-	import { store } from '../store/store';
+	import { store } from '../store/state.svelte.js';
 	import { db, storage } from '../dbConfig';
 	import { getDoc, doc, collection, addDoc, updateDoc } from 'firebase/firestore';
 	import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -38,7 +38,7 @@
 			}
 
 			// Get the username by uid
-			const uid = $store.user.uid;
+			const uid = store.user.uid;
 			const userRef = doc(db, 'users', uid);
 			const docSnap = await getDoc(userRef);
 			const userData = docSnap.data();
@@ -63,6 +63,7 @@
 			};
 			const docRef = await addDoc(collection(db, 'posts'), dataToPost);
 			const objectID = docRef.id;
+
 			// Add files to storage
 			for (var i = 0; i < files.length; i++) {
 				var f = files[i];
@@ -76,7 +77,7 @@
 				files: fileURLs
 			});
 
-			// Add this to the user's posts
+			// Add to the user's posts
 			var posts = userData.posts;
 			const numPosts = Object.keys(posts).length;
 			posts[numPosts] = objectID;
@@ -84,7 +85,7 @@
 				posts: posts
 			});
 
-			// add to list of all posts
+			// Add to list of all posts
 			const allPostsRef = doc(db, 'posts', 'allPosts');
 			const dataForFeed = {
 				name: objectName,
@@ -108,7 +109,7 @@
 
 <div class="page-container card">
 	<h1>Share</h1>
-	{#if !$store.user}
+	{#if !store.user}
 		Login to upload!
 	{:else}
 		<div class="card-content shadow">
@@ -145,13 +146,9 @@
 					<label for="no">No</label>
 				</div>
 				<label for="images">Files</label>
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="file-upload" onclick={uploadImages}>
+				<button class="file-upload" onclick={uploadImages}>
 					<i class="fa-solid fa-upload"></i><br />
-					<span class="upload-text"
-						>Upload your code and an image (or a few!) of what you made!</span
-					>
+					<span class="upload-text">Upload an image (or a few!) of what you made!</span>
 					<input
 						type="file"
 						id="images"
@@ -160,10 +157,9 @@
 						onchange={handleFileSelect}
 						accept="image/png, image/jpeg, .js"
 						multiple
-						required
 					/>
 					<div id="selectedFiles"></div>
-				</div>
+				</button>
 
 				<div class="submit">
 					<button onclick={postObject} type="submit" class="sign-up">Post!</button>
@@ -172,8 +168,6 @@
 		</div>
 	{/if}
 </div>
-
-<!-- onclick={() => postObject().then((window.location.href = `/fabs/${postID}`))} -->
 
 <style>
 	.input {
@@ -208,15 +202,12 @@
 	textarea {
 		width: 100%;
 		font-size: 0.8em;
+		font-family: 'Inter', sans-serif;
 	}
 
 	label {
 		font-size: 12px;
 		padding-bottom: 50px;
-	}
-
-	.section-title {
-		margin-top: 0px;
 	}
 
 	.made {

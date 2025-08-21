@@ -1,5 +1,5 @@
 <script>
-	import { store } from '../store/store';
+	import { store } from '../store/state.svelte.js';
 	import { db, storage } from '../dbConfig';
 	import { ref, listAll } from 'firebase/storage';
 	import { getDoc, doc, setDoc } from 'firebase/firestore';
@@ -11,10 +11,8 @@
 		const docSnap = await getDoc(docRef);
 
 		if (docSnap.exists()) {
-			// Load in data
 			allData = docSnap.data();
 		} else {
-			// docSnap.data() will be undefined in this case
 			console.log('No such document!');
 		}
 
@@ -22,7 +20,6 @@
 		const sortedEntries = Object.entries(allData).sort((a, b) => {
 			return a[1].created.seconds - b[1].created.seconds;
 		});
-
 		allData = Object.fromEntries(sortedEntries.reverse());
 	}
 
@@ -34,10 +31,17 @@
 	{#if allData}
 		<div class="grid">
 			{#each Object.entries(allData) as [postID, postData]}
-				<div class="project-tile shadow">
-					<a href="/fabs/{postID}">
+				<div class="project-tile {postData.isFork ? 'shadowRemix' : 'shadow'}">
+					<a aria-label="Project" href="/fabs/{postID}">
 						<div class="project-photo-container">
-							<img class="project-photo padding-bottom-std" src={postData.thumbnail} />
+							<img
+								alt="Contributed Project"
+								class="project-photo padding-bottom-std"
+								src={postData.thumbnail}
+							/>
+							{#if postData.isFork}
+								<div class="overlayText">Fork</div>
+							{/if}
 						</div>
 					</a>
 					<a href="/fabs/{postID}">
@@ -45,7 +49,7 @@
 					</a>
 
 					<div class="author padding-bottom-std">
-						by <a href="/users/{postData.user}">{postData.username}</a>
+						by <a href="/users/{postData.authorUID}">{postData.username}</a>
 					</div>
 				</div>
 			{/each}
@@ -54,3 +58,6 @@
 		loading...
 	{/if}
 </div>
+
+<style>
+</style>

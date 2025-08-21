@@ -1,18 +1,15 @@
 <script>
-	import { store, authHandlers } from '../store/store';
+	import { store, authHandlers } from '../store/state.svelte.js';
+	import { toggleAuthContainer } from '$lib/events/auth.js';
 	let email = '';
 	let password = '';
 	let authenticating = false;
 
-	function toggleAuthContainer() {
-		$store.displayLogin = !$store.displayLogin;
-	}
-
 	function signUp() {
-		$store.displaySignUp = true;
+		store.displaySignUp = true;
 	}
 
-	async function handleAuthentication() {
+	async function signIn() {
 		if (authenticating) {
 			return;
 		}
@@ -27,7 +24,7 @@
 </script>
 
 <div class="auth-container">
-	<button on:click={toggleAuthContainer} class="close">
+	<button aria-label="Close" onclick={toggleAuthContainer} class="close">
 		<i class="fa-solid fa-x"></i>
 	</button>
 	<form>
@@ -37,8 +34,8 @@
 		<label>
 			<input bind:value={password} class="input" type="password" placeholder="password" />
 		</label>
-		<button on:click={handleAuthentication} type="submit" class="sign-in">Sign In</button>
-		<button on:click={signUp} type="submit" class="sign-up">Sign Up</button>
+		<button onclick={signIn} type="submit" class="sign-in">Sign In</button>
+		<button onclick={signUp} type="submit" class="sign-up">Sign Up</button>
 	</form>
 </div>
 

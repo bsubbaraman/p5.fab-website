@@ -1,6 +1,6 @@
 <script>
 	import Header from '../../../components/Header.svelte';
-	import { store } from '../../../store/store';
+	import { store } from '../../../store/state.svelte.js';
 	import { db, storage } from '../../../dbConfig';
 	import { ref, listAll } from 'firebase/storage';
 	import { getDoc, doc, setDoc } from 'firebase/firestore';
@@ -16,10 +16,8 @@
 		const docSnap = await getDoc(docRef);
 
 		if (docSnap.exists()) {
-			// Load in data
 			userData = docSnap.data();
 		} else {
-			// docSnap.data() will be undefined in this case
 			console.log('No such user!');
 		}
 
@@ -52,41 +50,52 @@
 	fetchUserData();
 </script>
 
-<Header />
-<div class="page-container card">
-	{#if userData && postsData}
-		<div class="fabHeader">
-			<h1 class="fabName">{userData.username}</h1>
-			<span class="meta">joined {getDate()}</span><br />
-		</div>
-
-		<h2>Posts</h2>
-		{#if Object.keys(userData.posts).length}
-			<div class="grid">
-				{#each Object.entries(postsData) as [postID, postData]}
-					<div class="project-tile shadow">
-						<a href="/fabs/{postID}">
-							<div class="project-photo-container">
-								<img class="project-photo padding-bottom-std" src={postData.thumbnail} />
-							</div>
-						</a>
-						<a href="/fabs/{postID}">
-							<div class="project-title padding-bottom-half">{postData.name}</div>
-						</a>
-
-						<div class="author padding-bottom-std">
-							by <a href="/users/{postData.user}">{postData.username}</a>
-						</div>
-					</div>
-				{/each}
+<main>
+	<Header />
+	<div class="page-container card">
+		{#if userData && postsData}
+			<div class="fabHeader">
+				<h1 class="fabName">{userData.username}</h1>
+				<span class="meta">joined {getDate()}</span><br />
 			</div>
+
+			<h2>Posts</h2>
+			{#if Object.keys(userData.posts).length}
+				<div class="grid">
+					{#each Object.entries(postsData) as [postID, postData]}
+						{#if Object.values(userData.posts).includes(postID)}
+							<div class="project-tile {postData.isFork ? 'shadowRemix' : 'shadow'}">
+								<a aria-label="Project page" href="/fabs/{postID}">
+									<div class="project-photo-container">
+										<img
+											alt="Contributed project"
+											class="project-photo padding-bottom-std"
+											src={postData.thumbnail}
+										/>
+										{#if postData.isFork}
+											<div class="overlayText">Fork</div>
+										{/if}
+									</div>
+								</a>
+								<a href="/fabs/{postID}">
+									<div class="project-title padding-bottom-half">{postData.name}</div>
+								</a>
+
+								<div class="author padding-bottom-std">
+									by <a href="/users/{postData.user}">{postData.username}</a>
+								</div>
+							</div>
+						{/if}
+					{/each}
+				</div>
+			{:else}
+				No posts yet!
+			{/if}
 		{:else}
-			No posts yet!
+			loading...
 		{/if}
-	{:else}
-		loading...
-	{/if}
-</div>
+	</div>
+</main>
 
 <style>
 	.fabName {

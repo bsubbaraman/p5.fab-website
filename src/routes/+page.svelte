@@ -3,7 +3,7 @@
 	import Gallery from '../components/Gallery.svelte';
 	import Header from '../components/Header.svelte';
 	import SignIn from '../components/SignIn.svelte';
-	import { store } from '../store/store';
+	import { store } from '../store/state.svelte.js';
 	import { onMount } from 'svelte';
 
 	onMount(() => {

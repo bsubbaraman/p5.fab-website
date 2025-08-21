@@ -6,12 +6,29 @@ import { db } from '../dbConfig'
 
 
 
-export const store = writable({
+export const store = $state({
     displayLogin: false,
     displaySignUp: false,
     user: null,
     loading: true,
-    data: {}
+    data: {},
+    allPostsData: null,
+})
+
+export const editorState = $state({
+    sketchWindow: null,
+    editorView: null,
+    globalSketch: "",
+    p5Initialized: false,
+    output: [],
+    projectTitle: "Untitled Project",
+    displaySaveScreen: false,
+    saveText: 'save',
+    currentObjectID: null,
+    savedSketchData: {},
+    saved: false,
+    displayRemixPane: false,
+    remixTree: null,
 })
 
 export const authHandlers = {

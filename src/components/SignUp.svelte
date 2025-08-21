@@ -1,6 +1,7 @@
 <script>
 	import { getDoc, doc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-	import { store, authHandlers } from '../store/store';
+	import { store, authHandlers } from '../store/state.svelte.js';
+	import { toggleAuthContainer } from '$lib/events/auth.js';
 	import { db } from '../dbConfig';
 
 	let email = $state('');
@@ -8,12 +9,7 @@
 	let password = $state('');
 	let authenticating = false;
 
-	function toggleAuthContainer() {
-		$store.displayLogin = !$store.displayLogin;
-		$store.displaySignUp = false;
-	}
-
-	async function handleAuthentication() {
+	async function signUp() {
 		if (authenticating) {
 			return;
 		}
@@ -76,7 +72,7 @@
 </script>
 
 <div class="auth-container">
-	<button on:click={toggleAuthContainer} class="close">
+	<button aria-label="Close" onclick={toggleAuthContainer} class="close">
 		<i class="fa-solid fa-x"></i>
 	</button>
 	<form>
@@ -92,9 +88,7 @@
 		<label>
 			<input bind:value={password} class="input" type="password" placeholder="password" />
 		</label>
-		<button on:click={handleAuthentication} type="submit" class="sign-up" disabled={disableSignUp}
-			>Sign Up</button
-		>
+		<button onclick={signUp} type="submit" class="sign-up" disabled={disableSignUp}>Sign Up</button>
 	</form>
 </div>
 
