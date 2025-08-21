@@ -20,6 +20,7 @@
 	let objectID = $state();
 
 	async function fetchSketchData() {
+		console.log('fetching sketch data');
 		objectID = data.id;
 		if (objectID == 'new') {
 			editorState.savedSketchData = {
@@ -40,12 +41,14 @@
 	}
 
 	function loadSketchData(sketchData) {
+		console.log('loading sketch data');
 		editorState.globalSketch = sketchData.code;
 		console.log(sketchData.code);
 		editorState.projectTitle = sketchData.name;
 		editorState.currentObjectID = objectID;
 		editorState.savedSketchData = sketchData; // might need to do other stuff with this?
 		evalSketch(editorState.globalSketch);
+		console.log('loading sketch data done');
 	}
 
 	onMount(() => {
@@ -64,8 +67,10 @@
 	});
 
 	function handleIframeLoad() {
+		console.log('iframe loaded');
 		const sketchWindow = document.getElementById('preview');
 		editorState.sketchWindow = sketchWindow;
+		console.log('going to eval sketch in iFrame load');
 		evalSketch(editorState.globalSketch);
 	}
 </script>
