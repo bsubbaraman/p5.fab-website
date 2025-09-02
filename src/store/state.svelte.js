@@ -23,12 +23,14 @@ export const editorState = $state({
     output: [],
     projectTitle: "Untitled Project",
     displaySaveScreen: false,
+    displayLogScreen: false,
     saveText: 'save',
     currentObjectID: null,
     savedSketchData: {},
     saved: false,
     displayRemixPane: false,
     remixTree: null,
+    sketchIsFork: null,
 })
 
 export const authHandlers = {

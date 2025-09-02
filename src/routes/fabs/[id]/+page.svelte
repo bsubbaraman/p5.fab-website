@@ -3,15 +3,17 @@
 	import { store } from '../../../store/state.svelte.js';
 	import { db, storage } from '../../../dbConfig';
 	import { ref, listAll } from 'firebase/storage';
-	import { getDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
+	import { getDoc, doc, setDoc, updateDoc, increment } from 'firebase/firestore';
 	import { toggleAuthContainer } from '$lib/events/auth';
 	import { getPostFromDB } from '$lib/dbLoadSave';
 	import RemixPane from '../../../components/RemixPane.svelte';
+	import Share from '../../../components/Share.svelte';
 
 	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
 	let postData = $state();
 	let objectID = $state();
 	let docRef = $state();
+	let displayShareScreen = $state(false);
 
 	async function fetchPostData() {
 		// Get info about the Fab
@@ -37,17 +39,20 @@
 
 		var userFavorites = store.favorites;
 		const idx = userFavorites.indexOf(objectID);
+		var counter;
 		if (idx > -1) {
 			userFavorites.splice(idx, 1);
-			postData.favorites -= 1;
+			counter = -1;
+			// postData.favorites -= 1;
 		} else {
 			userFavorites.push(objectID);
-			postData.favorites += 1;
+			counter = 1;
+			// postData.favorites += 1;
 		}
 
 		// Update database & store
 		await updateDoc(docRef, {
-			favorites: postData.favorites
+			favorites: increment(counter)
 		});
 
 		const userRef = doc(db, 'users', store.user.uid);
@@ -56,6 +61,11 @@
 		});
 
 		store.favorites = userFavorites;
+		postData.favorites += counter; // so the page displays correct value, but don't send to db
+	}
+
+	function toggleShareScreen() {
+		displayShareScreen = !displayShareScreen;
 	}
 
 	fetchPostData();
@@ -64,7 +74,9 @@
 <main>
 	<Header />
 	<div class="page-container card">
-		{#if postData && store.allPostsData}
+		{#if displayShareScreen}
+			<Share bind:displayShareScreen {postData} {objectID} />
+		{:else if postData && store.allPostsData}
 			<div class="fabHeader">
 				<h1 class="fabName">{postData.name}</h1>
 				<span class="meta"
@@ -80,6 +92,10 @@
 					><br />
 				{/if}
 				<span class="meta">{getDate()}</span>
+				{#if store.user && store.user.uid == postData.authorUID}
+					<br />
+					<span class="meta" onclick={toggleShareScreen}><b>edit</b></span>
+				{/if}
 			</div>
 
 			<div class="card-content">
@@ -105,10 +121,16 @@
 							Open in editor
 						</button>
 					</a>
-					<button disabled={postData.fabscription ? false : true}>
+					<a href="/timeline/{objectID}">
+						<button disabled={postData.projectLog ? false : true}>
+							<i class="fa-solid fa-film"></i>
+							Open Timeline
+						</button>
+					</a>
+					<!-- <button disabled={postData.fabscription ? false : true}>
 						<i class="fa-solid fa-film"></i>
 						Open Fabscription
-					</button>
+					</button> -->
 				</div>
 				<div class="fabInfo">
 					<h3>Info</h3>

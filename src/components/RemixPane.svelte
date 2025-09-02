@@ -17,7 +17,6 @@
 	}
 
 	async function renderTree(nodeID) {
-		console.log('getting', nodeID, 'from db');
 		const nodeData = await getPostFromDB(nodeID);
 		const currentNode = nodeID == editorState.currentObjectID ? "class='current'" : '';
 		console.log(currentNode);

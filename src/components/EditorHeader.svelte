@@ -6,6 +6,7 @@
 	import { evalSketch } from '$lib/repl';
 	import { connectToMachine } from '$lib/events/connectToMachine';
 	import { startPrint } from '$lib/events/startPrint';
+	import { stopPrint } from '$lib/events/stopPrint';
 	import { toggleAuthContainer } from '$lib/events/auth.js';
 	import SignIn from './SignIn.svelte';
 	import SignUp from './SignUp.svelte';
@@ -14,6 +15,7 @@
 
 	let isNewSketch = $state();
 	let userIsAuthor = $state();
+	let isFork = $state();
 
 	function validateTitle(event) {
 		// Limit title length and no newlines
@@ -68,6 +70,26 @@
 		}
 	}
 
+	function handleLog() {
+		if (!store.user) {
+			alert('Login or signup to log!');
+			toggleAuthContainer();
+			return;
+		}
+
+		if (!editorState.saved) {
+			alert('save your sketch before adding to your project log!');
+			return;
+		}
+
+		if (isNewSketch || !userIsAuthor) {
+			alert('save your sketch before adding to your project log!');
+			editorState.displaySaveScreen = true;
+		} else if (userIsAuthor) {
+			editorState.displayLogScreen = true;
+		}
+	}
+
 	async function updateSavedSketch() {
 		// Update post
 		const docRef = doc(db, 'posts', editorState.currentObjectID);
@@ -98,6 +120,7 @@
 
 	$effect(() => {
 		isNewSketch = editorState.savedSketchData.hasOwnProperty('new');
+		isFork = editorState.sketchIsFork;
 		if (store.user) {
 			userIsAuthor = editorState.savedSketchData.authorUID == store.user.uid;
 		}
@@ -118,7 +141,7 @@
 	});
 
 	function handleForks(e) {
-		// TODO: If I remove console.log, button is sometimes fired twice on rapid clicks
+		// TODO: If I remove console.log, button is sometimes fired twice on rapid clicks?
 		console.log(e);
 		editorState.displayRemixPane = !editorState.displayRemixPane;
 	}
@@ -149,6 +172,9 @@
 			<div class="menu-item">
 				<button onclick={startPrint}>print</button>
 			</div>
+			<div class="menu-item">
+				<button onclick={stopPrint}>stop</button>
+			</div>
 		</div>
 
 		<div class="navbar-center">
@@ -171,6 +197,16 @@
 					<button id="forks" onmousedown={handleForks}>forks</button>
 				</div>
 			{/if}
+			{#if isFork}
+				<div class="menu-item">
+					<button id="codeDiffBtn"
+						><a href="/diff/{editorState.currentObjectID}" target="_blank">diff</a></button
+					>
+				</div>
+			{/if}
+			<div class="menu-item">
+				<button id="sketchLogBtn" onclick={handleLog}>log</button>
+			</div>
 			<div class="menu-item">
 				<button id="sketchSaveBtn" onclick={handleSave}>{editorState.saveText}</button>
 			</div>

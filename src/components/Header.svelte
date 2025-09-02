@@ -23,13 +23,13 @@
 				<a href="https://machineagency.github.io/p5.fab-docs/" target="_blank">Docs</a>
 			</div>
 
-			{#if store.user}
+			<!-- {#if store.user}
 				<div class="menu-item">
 					<div class="dropdown">
 						<a href="/share" class:active={page.url.pathname == '/share'}>Share</a>
 					</div>
 				</div>
-			{/if}
+			{/if} -->
 			<div class="menu-item">
 				<a>About</a>
 			</div>

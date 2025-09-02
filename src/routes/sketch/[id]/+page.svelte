@@ -13,6 +13,7 @@
 	import SignUp from '../../../components/SignUp.svelte';
 	import RemixPane from '../../../components/RemixPane.svelte';
 	import Split from 'split.js';
+	import EditorLog from '../../../components/EditorLog.svelte';
 
 	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
 	let initIframe = $state(false);
@@ -26,6 +27,7 @@
 			editorState.savedSketchData = {
 				new: true
 			};
+			editorState.sketchIsFork = false;
 			return;
 		} else {
 			const sketchData = await getPostFromDB(objectID);
@@ -47,6 +49,8 @@
 		editorState.projectTitle = sketchData.name;
 		editorState.currentObjectID = objectID;
 		editorState.savedSketchData = sketchData; // might need to do other stuff with this?
+		editorState.sketchIsFork = sketchData.isFork;
+		console.log(editorState.sketchIsFork);
 		evalSketch(editorState.globalSketch);
 		console.log('loading sketch data done');
 	}
@@ -79,6 +83,10 @@
 	<EditorHeader />
 	{#if editorState.displaySaveScreen}
 		<EditorShare />
+	{/if}
+
+	{#if editorState.displayLogScreen}
+		<EditorLog />
 	{/if}
 
 	{#if !store.user && store.displayLogin}

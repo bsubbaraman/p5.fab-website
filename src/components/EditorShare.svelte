@@ -2,7 +2,7 @@
 	import { editorState, store } from '../store/state.svelte.js';
 	import { db, storage } from '../dbConfig.js';
 	import { getUserData } from '$lib/dbLoadSave.js';
-	import { getDoc, doc, collection, addDoc, updateDoc } from 'firebase/firestore';
+	import { getDoc, doc, collection, addDoc, updateDoc, increment } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 	import Editor from './Editor.svelte';
 
@@ -78,6 +78,7 @@
 			const objectID = docRef.id;
 
 			var fileURLs = [];
+			console.log('adding files to storage');
 			if (files) {
 				// Add user provided files to storage
 				for (var i = 0; i < files.length; i++) {
@@ -106,6 +107,7 @@
 					console.log(e);
 				}
 			}
+			console.log('added files to storage');
 
 			await updateDoc(docRef, {
 				files: fileURLs
@@ -120,6 +122,7 @@
 			});
 
 			// Add to list of all posts
+			console.log('adding to all posts');
 			const allPostsRef = doc(db, 'posts', 'allPosts');
 			const dataForFeed = {
 				name: editorState.projectTitle,
@@ -134,6 +137,7 @@
 			await updateDoc(allPostsRef, {
 				[objectID]: dataForFeed
 			});
+			console.log('all posts updated');
 
 			// If this is a fork, update the remix data
 			if (isFork) {
@@ -150,9 +154,10 @@
 					const numForks = parentData.numForks;
 					parentData.forks[numForks] = remixDataToUpdate;
 					parentData.numForks += 1;
+					console.log('update fork info');
 					await updateDoc(parentRef, {
 						forks: parentData.forks,
-						numForks: parentData.numForks
+						numForks: increment(1)
 					});
 				} else {
 					console.log("Couldn't find record id");

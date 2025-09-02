@@ -23,8 +23,13 @@
 	},
 	"dependencies": {
 		"@codemirror/lang-javascript": "^6.2.4",
+		"@codemirror/merge": "^6.10.2",
+		"@codemirror/state": "^6.5.2",
+		"@codemirror/view": "^6.38.1",
 		"acorn": "^8.15.0",
+		"d3": "^7.9.0",
 		"firebase": "^11.9.1",
+		"js-interpreter": "^6.0.1",
 		"split.js": "^1.6.5",
 		"svelte-codemirror-editor": "^1.4.1"
 	}

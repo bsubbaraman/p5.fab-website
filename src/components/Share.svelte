@@ -4,10 +4,15 @@
 	import { getDoc, doc, collection, addDoc, updateDoc } from 'firebase/firestore';
 	import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-	let objectName = $state('');
-	let objectInfo = $state('');
-	let hasFabricated = $state('yes');
+	let { displayShareScreen = $bindable(), postData, objectID } = $props();
+	let objectName = $state(postData.name);
+	let objectInfo = $state(postData.info);
+	let hasFabricated = $state(postData.hasFabricated);
 	let files;
+
+	function toggleShareScreen() {
+		displayShareScreen = !displayShareScreen;
+	}
 
 	function uploadImages() {
 		document.getElementById('images').click();
@@ -31,9 +36,6 @@
 				return;
 			} else if (!objectInfo) {
 				alert('Add some info about your object!');
-				return;
-			} else if (!files) {
-				alert('Your upload must include at least 1 file!');
 				return;
 			}
 
@@ -112,7 +114,10 @@
 	{#if !store.user}
 		Login to upload!
 	{:else}
-		<div class="card-content shadow">
+		<div class="card-content shadow nohover">
+			<button aria-label="Close" onclick={toggleShareScreen} class="close">
+				<i class="fa-solid fa-x"></i>
+			</button>
 			<form>
 				<label for="title">Name</label>
 				<input

@@ -203,7 +203,7 @@ class LinearMove {
 const defaultPrinterSettings = {
   name: "ender3",
   baudRate: 115200,
-  nozzleDiameter: 0.4,
+  nozzleDiameter: 0.8,
   filamentDiameter: 1.75,
   maxX: 220,
   maxY: 220,
@@ -508,7 +508,7 @@ class Fab {
 
   print() {
     console.log("Starting print");
-    console.log("GCODE TO MIDI TIMESTAMPS AT START:", this.gcodeToMidiTimestamps);
+    // console.log("GCODE TO MIDI TIMESTAMPS AT START:", this.gcodeToMidiTimestamps);ß
 
     if (this.isPrinting) {
       console.log("Print in progress, cant start a new print");
@@ -521,7 +521,7 @@ class Fab {
       // TODO: If sync commands are needed, then start this interval after those are sent
       // Try taking this out and instead testing in fabscription
       // because long foam prints had ~1second intervals between data collections
-      console.log('am i fabscribing here to get rtpos?', this.fabscribe);
+      // console.log('am i fabscribing here to get rtpos?', this.fabscribe);
       this.fabscribe = false; // undefined if i don't set this here. why?
       if (this.fabscribe) {
         this.positionQueryIntervalID = setInterval(() => {
@@ -1252,7 +1252,11 @@ class Fab {
 
     // Prime the nozzle
     this.prime(e);
+
+    // Pop the nozzle back down
+    this.moveZ(-0.2);
   }
+
 
   travelTo(x, y, z, v) {
     // Move to an absolute coordinate with a z hop

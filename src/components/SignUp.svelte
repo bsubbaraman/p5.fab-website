@@ -24,6 +24,7 @@
 					return;
 				}
 			}
+
 			await authHandlers.signup(email, password, username);
 			await updateDoc(doc(db, 'users', 'usernames'), {
 				allUsernames: arrayUnion(username)
