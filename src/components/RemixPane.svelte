@@ -81,6 +81,16 @@
 					{@html editorState.remixTree}
 				</ul>
 			{/if}
+			<div class="remix-graph">
+				<a
+					href="/graph/{editorState.currentObjectID}"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="remix-graph"
+				>
+					View Remix Graph
+				</a>
+			</div>
 
 			<!-- <div class="forkEntry">
 				<img
@@ -114,6 +124,11 @@
 		min-width: 300px;
 		height: 100%;
 		overflow: scroll;
+	}
+
+	.remix-graph {
+		margin-top: 25px;
+		text-align: center;
 	}
 
 	/* Tree css lives in app.css */

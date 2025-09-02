@@ -94,7 +94,7 @@
 				<span class="meta">{getDate()}</span>
 				{#if store.user && store.user.uid == postData.authorUID}
 					<br />
-					<span class="meta" onclick={toggleShareScreen}><b>edit</b></span>
+					<span class="meta edit" onclick={toggleShareScreen}><b>edit</b></span>
 				{/if}
 			</div>
 
@@ -301,5 +301,9 @@
 		margin-left: 20px;
 		width: 250px;
 		height: 250px;
+	}
+
+	.edit {
+		cursor: pointer;
 	}
 </style>

@@ -67,6 +67,7 @@
 			const objectID = docRef.id;
 
 			// Add files to storage
+			console.log('adding files to storage');
 			for (var i = 0; i < files.length; i++) {
 				var f = files[i];
 				const storageRef = ref(storage, objectID + '/' + f.name);
@@ -74,6 +75,7 @@
 				const downloadURL = await getDownloadURL(storageRef);
 				fileURLs.push(downloadURL);
 			}
+			console.log('files added to storage');
 
 			await updateDoc(docRef, {
 				files: fileURLs
