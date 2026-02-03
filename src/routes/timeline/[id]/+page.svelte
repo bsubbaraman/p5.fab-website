@@ -79,9 +79,17 @@
 			<div class="diff-info-row">
 				<div class="diff-info-col">
 					<ImageGallery bind:current={originalGalleryIndex} images={originalLog.files} />
+					<div class="fabInfo">
+						<h3>Info</h3>
+						{originalLog.changeLog}
+					</div>
 				</div>
 				<div class="diff-info-col">
 					<ImageGallery bind:current={modifiedGalleryIndex} images={modifiedLog.files} />
+					<div class="fabInfo">
+						<h3>Info</h3>
+						{modifiedLog.changeLog}
+					</div>
 				</div>
 			</div>
 			<div class="diff">
@@ -91,20 +99,6 @@
 					mode="side-by-side"
 					isLog="true"
 				/>
-			</div>
-			<div class="diff-info-row">
-				<div class="diff-info-col">
-					<div class="fabInfo">
-						<h3>Info</h3>
-						{originalLog.changeLog}
-					</div>
-				</div>
-				<div class="diff-info-col">
-					<div class="fabInfo">
-						<h3>Info</h3>
-						{modifiedLog.changeLog}
-					</div>
-				</div>
 			</div>
 		</div>
 	{:else}

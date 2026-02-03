@@ -5,19 +5,32 @@
 	import { getPostFromDB } from '$lib/dbLoadSave.js';
 
 	let { objectID } = $props();
+	let graphInitialized = $state(false);
 	let container;
 
 	// Graph Variables
-	var graphData = $state({
+	let graphData = $state({
 		nodes: [],
 		links: []
 	});
-	const graphDist = 400; // distance between nodes
-	const nodeSize = 100; // how big nodes are rendered
+	const graphDist = 100; // distance between nodes
+	const nodeSize = 75; // how big nodes are rendered
+
+	// Filter Variables
+	let availableMaterials = $state([]);
+	let selectedMaterials = $state([]);
+	let selectedFabStatus = $state([]);
 
 	function renderGraph(graphData) {
-		const { width, height } = container.getBoundingClientRect();
+		// Clone graph data so we can rerender
+		const clonedGraphData = {
+			nodes: graphData.nodes.map((node) => ({ ...node })),
+			links: graphData.links.map((link) => ({ ...link }))
+		};
+		// Clear previous graph
+		d3.select(container).select('svg').remove();
 
+		const { width, height } = container.getBoundingClientRect();
 		const svg = d3
 			.select(container)
 			.append('svg')
@@ -28,16 +41,17 @@
 
 		const color = d3.scaleOrdinal(d3.schemeTableau10);
 		const simulation = d3
-			.forceSimulation(graphData.nodes)
+			.forceSimulation(clonedGraphData.nodes)
 			.force(
 				'link',
 				d3
-					.forceLink(graphData.links)
+					.forceLink(clonedGraphData.links)
 					.id((d) => d.id)
 					.distance(graphDist)
 			)
-			.force('charge', d3.forceManyBody().strength(-500))
-			.force('center', d3.forceCenter(width / 2, height / 2));
+			.force('charge', d3.forceManyBody().strength(-2000))
+			.force('center', d3.forceCenter(width / 2, height / 2))
+			.force('collide', d3.forceCollide().radius(nodeSize).iterations(2));
 
 		svg
 			.append('defs')
@@ -58,7 +72,7 @@
 			.attr('stroke', '#000')
 			.attr('stroke-opacity', 1)
 			.selectAll('line')
-			.data(graphData.links)
+			.data(clonedGraphData.links)
 			.join('line')
 			.attr('stroke-width', 2)
 			.attr('marker-end', 'url(#arrow)');
@@ -67,7 +81,7 @@
 
 		defs
 			.selectAll('clipPath')
-			.data(graphData.nodes)
+			.data(clonedGraphData.nodes)
 			.join('clipPath')
 			.attr('id', (d) => `clip-${d.id}`)
 			.append('circle')
@@ -78,7 +92,7 @@
 		const node = svg
 			.append('g')
 			.selectAll('g')
-			.data(graphData.nodes)
+			.data(clonedGraphData.nodes)
 			.join('g')
 			.call(drag(simulation));
 
@@ -163,6 +177,18 @@
 					return d.target.y - (dy / dist) * r;
 				});
 
+			// Constrain nodes within a circle
+			const boundaryRadius = 215;
+    node.each(function(d) {
+        const dx = d.x - width / 2;
+        const dy = d.y - height / 2;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > boundaryRadius) {
+            d.x = width / 2 + (dx / dist) * boundaryRadius;
+            d.y = height / 2 + (dy / dist) * boundaryRadius;
+        }
+    });
+
 			node.attr('transform', (d) => `translate(${d.x},${d.y})`);
 		});
 
@@ -199,7 +225,6 @@
 
 		allPostsData.forEach((post) => {
 			idToPost[post.id] = post;
-
 			if (post.parentSketch) {
 				if (!childrenMap[post.parentSketch]) {
 					childrenMap[post.parentSketch] = [];
@@ -271,7 +296,9 @@
 				group,
 				img: post.img,
 				name: post.name,
-				username: post.username
+				username: post.username,
+				materials: post.materials,
+				hasFabricated: post.hasFabricated
 			});
 
 			if (post.parentSketch && idToPost[post.parentSketch]) {
@@ -290,29 +317,118 @@
 		const connectedPosts = findConnectedPosts(objectID);
 
 		// Step 2: Format as graphData
-		const graphData = formatGraphData(connectedPosts);
+		const formatted = formatGraphData(connectedPosts);
+		renderGraph(formatted);
+		extractAvailableMaterials(formatted.nodes);
 
-		renderGraph(graphData);
+		// Can't assign reactive state object directly?
+		// Assign nodes and links individually instead
+		graphData.nodes = formatted.nodes;
+		graphData.links = formatted.links;
 	}
+
+	function extractAvailableMaterials(nodes) {
+		const allMaterials = nodes.flatMap((node) => node.materials || []);
+		const uniqueMaterials = Array.from(new Set(allMaterials));
+		availableMaterials = uniqueMaterials.sort(); // optional sort
+	}
+
+	function handleFilter() {
+		// TODO: generalizable filtering
+
+		// If nothing selected, show full graph
+		if (selectedMaterials.length === 0 && selectedFabStatus.length == 0) {
+			renderGraph(graphData);
+			return;
+		}
+		console.log(selectedFabStatus);
+
+		// Filter nodes that contain one or more selected materials
+		const filteredNodes = graphData.nodes.filter(
+			(node) =>
+				(selectedMaterials.length === 0 ||
+					node.materials?.some((m) => selectedMaterials.includes(m))) &&
+				(selectedFabStatus.length === 0 || selectedFabStatus.includes(node.hasFabricated))
+		);
+		console.log(filteredNodes);
+
+		// Build a Set of node IDs for fast lookup
+		const visibleNodeIDs = new Set(filteredNodes.map((n) => n.id));
+
+		// Only include links where both source & target are in filtered nodes
+		const filteredLinks = graphData.links.filter(
+			(link) => visibleNodeIDs.has(link.source) && visibleNodeIDs.has(link.target)
+		);
+
+		// Clear the existing graph SVG
+		d3.select(container).select('svg').remove();
+
+		// Render the new filtered graph
+		renderGraph({ nodes: filteredNodes, links: filteredLinks });
+	}
+
+	$effect(() => {
+		if (store.allPostsData && !graphInitialized) {
+			makeRemixGraph().then(() => {
+				graphInitialized = true;
+			});
+		}
+	});
 
 	onMount(() => {
 		// makeGraph();
 	});
 </script>
 
-<div bind:this={container} class="graph"></div>
-{#if store.allPostsData}
-	{#await makeRemixGraph()}
-		loading
-	{/await}
-{:else}{/if}
+<div class="container">
+	<div bind:this={container} class="graph"></div>
+
+	<!-- Right Sidebar -->
+	<div class="sidebar">
+		<h2>Remix Graph Filter</h2>
+		<form on:submit|preventDefault={handleFilter}>
+			<fieldset>
+				<legend><h3>General</h3></legend>
+				<label>
+					<input type="checkbox" bind:group={selectedFabStatus} value="yes" />
+					Fabricated
+				</label>
+				<label>
+					<input type="checkbox" bind:group={selectedFabStatus} value="no" />
+					Not fabricated
+				</label>
+				<br /><br />
+				<legend><h3>Materials</h3></legend>
+				{#each availableMaterials as material}
+					<label>
+						<input type="checkbox" bind:group={selectedMaterials} value={material} />
+						{material}
+					</label>
+				{/each}
+			</fieldset>
+
+			<button type="submit">Filter</button>
+		</form>
+	</div>
+</div>
+
+{#if !graphInitialized}
+	<p>Loading graph...</p>
+{/if}
 
 <style>
+	.container {
+		display: flex;
+		width: 100%;
+		height: 100vh;
+		overflow: hidden;
+	}
+
 	.graph {
 		display: flex;
 		justify-content: center;
 		align-items: center;
-		height: 80vh;
+		height: 100%;
 		width: 100%;
 		overflow: none;
 	}
@@ -321,5 +437,40 @@
 		display: block;
 		max-width: 100%;
 		max-height: 100%;
+	}
+
+	.sidebar {
+		width: 20vw;
+		background: white;
+		border-left: 2px dotted black;
+		padding: 20px;
+		box-sizing: border-box;
+		overflow-y: auto;
+	}
+
+	.sidebar form {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.sidebar fieldset {
+		border: none;
+		padding: 0;
+	}
+
+	.sidebar label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.sidebar button {
+		margin-top: auto;
+		align-self: flex-start;
+		padding: 8px 16px;
+		font-size: 1rem;
+		cursor: pointer;
+		align-self: center;
 	}
 </style>

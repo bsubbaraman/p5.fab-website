@@ -45,11 +45,11 @@
 	<Header />
 	{#if parentPostData !== null}
 		<div class="page-container card">
-			<div class="diff">
-				<CodeDiff original={parentPostData} modified={postData} mode="side-by-side" />
-			</div>
 			<div class="diff-info-row">
 				<div class="diff-info-col">
+					<div class="titles">
+						<span><b>{parentPostData.name}</b> <br /><i>by {parentPostData.username}</i></span>
+					</div>
 					<ImageGallery images={parentPostData.files} />
 					<div class="fabInfo">
 						<h3>Info</h3>
@@ -57,12 +57,18 @@
 					</div>
 				</div>
 				<div class="diff-info-col">
+					<div class="titles">
+						<span><b>{postData.name}</b> <br /><i>by {postData.username}</i></span>
+					</div>
 					<ImageGallery images={postData.files} />
 					<div class="fabInfo">
 						<h3>Info</h3>
 						{postData.info}
 					</div>
 				</div>
+			</div>
+			<div class="diff">
+				<CodeDiff original={parentPostData} modified={postData} mode="side-by-side" />
 			</div>
 		</div>
 	{:else}
@@ -103,6 +109,14 @@
 		text-align: left;
 		margin-top: 25px;
 		margin-bottom: 25px;
+	}
+
+	.titles {
+		display: flex;
+		justify-content: space-between;
+
+		padding: 20px;
+		font-size: 0.9rem;
 	}
 
 	.fabName {

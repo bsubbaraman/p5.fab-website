@@ -9,7 +9,7 @@
 <header>
 	<div class="nav-bar">
 		<div class="nav-left">
-			<a class="logo" href="/explore"> p5.fab </a>
+			<a class="logo" href="/explore"> <i>p5.fab</i></a>
 		</div>
 
 		<div class="nav-right">
@@ -103,6 +103,7 @@
 		font-size: 1.5em;
 		font-family: Roboto Mono;
 		padding: 3px;
+		margin-left: 20px;
 	}
 
 	.dropdown {

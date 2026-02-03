@@ -52,7 +52,7 @@
 				fileNames.push(f.name);
 			}
 
-			const dataToPost = {
+			const dataToUpdate = {
 				name: objectName,
 				info: objectInfo,
 				hasFabricated: hasFabricated,
@@ -76,10 +76,11 @@
 				fileURLs.push(downloadURL);
 			}
 			console.log('files added to storage');
-
+			console.log('updating file urls');
 			await updateDoc(docRef, {
 				files: fileURLs
 			});
+			console.log('file urls updated');
 
 			// Add to the user's posts
 			var posts = userData.posts;

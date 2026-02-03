@@ -6,6 +6,7 @@
 	import { getDoc, doc, setDoc, updateDoc, increment } from 'firebase/firestore';
 	import { toggleAuthContainer } from '$lib/events/auth';
 	import { getPostFromDB } from '$lib/dbLoadSave';
+	import ImageGallery from '../../../components/ImageGallery.svelte';
 	import RemixPane from '../../../components/RemixPane.svelte';
 	import Share from '../../../components/Share.svelte';
 
@@ -13,6 +14,7 @@
 	let postData = $state();
 	let objectID = $state();
 	let docRef = $state();
+	let galleryIndex = $state(0);
 	let displayShareScreen = $state(false);
 
 	async function fetchPostData() {
@@ -100,7 +102,8 @@
 
 			<div class="card-content">
 				<div class="images">
-					<img alt="Contributed project" src={postData.files[0]} />
+					<!-- <img alt="Contributed project" src={postData.files[0]} /> -->
+					<ImageGallery bind:current={galleryIndex} images={postData.files} />
 				</div>
 				<div class="community">
 					<button onclick={likePost}>
@@ -134,6 +137,13 @@
 				</div>
 				<div class="fabInfo">
 					<h3>Info</h3>
+					{#if postData.materials}
+						<b>Material:</b>
+						{#each postData.materials as mat, i}
+							{postData.materials[i]}
+						{/each}
+						<br /><br />
+					{/if}
 					{postData.info}
 				</div>
 				{#if postData.isFork}
@@ -263,9 +273,12 @@
 	}
 
 	.images {
-		width: 100%; /* Set your desired width */
+		width: 100%;
 		height: 300px;
-		margin-bottom: 20px;
+		margin-bottom: 50px;
+		display: flex;
+		justify-content: center;
+		align-items: center;
 	}
 
 	.images img {
