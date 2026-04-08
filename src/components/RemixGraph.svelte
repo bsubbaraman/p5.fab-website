@@ -13,13 +13,16 @@
 		nodes: [],
 		links: []
 	});
-	const graphDist = 100; // distance between nodes
+	const graphDist = 160; // distance between nodes
 	const nodeSize = 75; // how big nodes are rendered
 
 	// Filter Variables
 	let availableMaterials = $state([]);
 	let selectedMaterials = $state([]);
 	let selectedFabStatus = $state([]);
+
+	// Created in onMount (client-only) and reused across renders
+	let tooltip;
 
 	function renderGraph(graphData) {
 		// Clone graph data so we can rerender
@@ -39,7 +42,22 @@
 			.attr('width', '100%')
 			.attr('height', '100%');
 
-		const color = d3.scaleOrdinal(d3.schemeTableau10);
+		// Dynamic sizing: shrink nodes and distances as count grows
+		const n = clonedGraphData.nodes.length;
+		const scaleFactor = Math.max(0.45, Math.min(1.0, Math.sqrt(7 / Math.max(n, 1))));
+		const dynNodeSize = Math.round(nodeSize * scaleFactor);
+		const dynGraphDist = Math.round(graphDist * scaleFactor);
+		const nodeRadius = dynNodeSize / 2 + 2;
+		const edgeR = nodeRadius + 8;
+
+		// Zoom/pan layer — all graph elements go inside this group
+		const zoomGroup = svg.append('g');
+		const zoomBehavior = d3
+			.zoom()
+			.scaleExtent([0.1, 8])
+			.on('zoom', (event) => zoomGroup.attr('transform', event.transform));
+		svg.call(zoomBehavior);
+
 		const simulation = d3
 			.forceSimulation(clonedGraphData.nodes)
 			.force(
@@ -47,12 +65,13 @@
 				d3
 					.forceLink(clonedGraphData.links)
 					.id((d) => d.id)
-					.distance(graphDist)
+					.distance(dynGraphDist)
 			)
-			.force('charge', d3.forceManyBody().strength(-2000))
+			.force('charge', d3.forceManyBody().strength(-800 * scaleFactor))
 			.force('center', d3.forceCenter(width / 2, height / 2))
-			.force('collide', d3.forceCollide().radius(nodeSize).iterations(2));
+			.force('collide', d3.forceCollide().radius(nodeRadius + 15).iterations(3));
 
+		// Arrow marker (in SVG defs, not zoom group — references work globally)
 		svg
 			.append('defs')
 			.append('marker')
@@ -67,7 +86,19 @@
 			.attr('d', 'M0,-5L10,0L0,5')
 			.attr('fill', '#000');
 
-		const link = svg
+		// Clip paths (in SVG defs, referenced by zoom-group elements)
+		const defs = svg.append('defs');
+		defs
+			.selectAll('clipPath')
+			.data(clonedGraphData.nodes)
+			.join('clipPath')
+			.attr('id', (d) => `clip-${d.id}`)
+			.append('circle')
+			.attr('r', dynNodeSize / 2)
+			.attr('cx', 0)
+			.attr('cy', 0);
+
+		const link = zoomGroup
 			.append('g')
 			.attr('stroke', '#000')
 			.attr('stroke-opacity', 1)
@@ -77,19 +108,7 @@
 			.attr('stroke-width', 2)
 			.attr('marker-end', 'url(#arrow)');
 
-		const defs = svg.append('defs');
-
-		defs
-			.selectAll('clipPath')
-			.data(clonedGraphData.nodes)
-			.join('clipPath')
-			.attr('id', (d) => `clip-${d.id}`)
-			.append('circle')
-			.attr('r', nodeSize / 2) // same radius as the border
-			.attr('cx', 0)
-			.attr('cy', 0);
-
-		const node = svg
+		const node = zoomGroup
 			.append('g')
 			.selectAll('g')
 			.data(clonedGraphData.nodes)
@@ -99,7 +118,7 @@
 		// Border circle
 		node
 			.append('circle')
-			.attr('r', nodeSize / 2 + 2) // slightly bigger for border
+			.attr('r', nodeRadius)
 			.attr('fill', 'none')
 			.attr('stroke', 'black')
 			.attr('stroke-width', 2);
@@ -108,10 +127,10 @@
 		node
 			.append('image')
 			.attr('href', (d) => d.img || '')
-			.attr('width', nodeSize)
-			.attr('height', nodeSize)
-			.attr('x', -nodeSize / 2)
-			.attr('y', -nodeSize / 2)
+			.attr('width', dynNodeSize)
+			.attr('height', dynNodeSize)
+			.attr('x', -dynNodeSize / 2)
+			.attr('y', -dynNodeSize / 2)
 			.attr('clip-path', (d) => `url(#clip-${d.id})`);
 
 		node
@@ -125,69 +144,36 @@
 				tooltip.style('opacity', 0);
 			})
 			.on('click', (event, d) => {
-				const url = `/fabs/${d.id}`;
-				window.open(url, '_blank'); // open in new tab
+				window.open(`/fabs/${d.id}`, '_blank');
 			});
 		node.style('cursor', 'pointer');
-
-		// node.append('title').text((d) => d.name);
-
-		// tooltip container
-		const tooltip = d3
-			.select('body')
-			.append('div')
-			.style('position', 'absolute')
-			.style('padding', '6px 10px')
-			.style('background', '#fff')
-			.style('color', '#000')
-			.style('border-radius', '6px')
-			.style('font-size', '16px')
-			.style('font-family', 'Inter')
-			.style('pointer-events', 'none')
-			.style('opacity', 0);
 
 		simulation.on('tick', () => {
 			link
 				.attr('x1', (d) => {
 					const dx = d.target.x - d.source.x;
 					const dy = d.target.y - d.source.y;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					const r = nodeSize / 2 + 2; // radius + border
-					return d.source.x + (dx / dist) * r;
+					const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+					return d.source.x + (dx / dist) * nodeRadius;
 				})
 				.attr('y1', (d) => {
 					const dx = d.target.x - d.source.x;
 					const dy = d.target.y - d.source.y;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					const r = nodeSize / 2 + 2;
-					return d.source.y + (dy / dist) * r;
+					const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+					return d.source.y + (dy / dist) * nodeRadius;
 				})
 				.attr('x2', (d) => {
 					const dx = d.target.x - d.source.x;
 					const dy = d.target.y - d.source.y;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					const r = nodeSize / 2 + 2;
-					return d.target.x - (dx / dist) * r;
+					const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+					return d.target.x - (dx / dist) * edgeR;
 				})
 				.attr('y2', (d) => {
 					const dx = d.target.x - d.source.x;
 					const dy = d.target.y - d.source.y;
-					const dist = Math.sqrt(dx * dx + dy * dy);
-					const r = nodeSize / 2 + 2;
-					return d.target.y - (dy / dist) * r;
+					const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+					return d.target.y - (dy / dist) * edgeR;
 				});
-
-			// Constrain nodes within a circle
-			const boundaryRadius = 215;
-    node.each(function(d) {
-        const dx = d.x - width / 2;
-        const dy = d.y - height / 2;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > boundaryRadius) {
-            d.x = width / 2 + (dx / dist) * boundaryRadius;
-            d.y = height / 2 + (dy / dist) * boundaryRadius;
-        }
-    });
 
 			node.attr('transform', (d) => `translate(${d.x},${d.y})`);
 		});
@@ -207,7 +193,12 @@
 				d.fx = null;
 				d.fy = null;
 			}
-			return d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended);
+			// filter: only drag on left-click, not on zoom pan gestures
+			return d3.drag()
+				.filter((event) => !event.ctrlKey && event.button === 0)
+				.on('start', dragstarted)
+				.on('drag', dragged)
+				.on('end', dragended);
 		}
 	}
 
@@ -376,6 +367,19 @@
 	}
 
 	onMount(() => {
+		tooltip = d3
+			.select('body')
+			.append('div')
+			.style('position', 'absolute')
+			.style('padding', '6px 10px')
+			.style('background', '#fff')
+			.style('color', '#000')
+			.style('border-radius', '6px')
+			.style('font-size', '16px')
+			.style('font-family', 'Inter')
+			.style('pointer-events', 'none')
+			.style('opacity', 0);
+
 		makeRemixGraph().then(() => {
 			graphInitialized = true;
 		});
@@ -422,7 +426,8 @@
 	.container {
 		display: flex;
 		width: 100%;
-		height: 100vh;
+		height: 100%;
+		flex: 1;
 		overflow: hidden;
 	}
 
