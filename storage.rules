@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{objectID}/{allFiles=**} {
+      allow read: if true;
+      allow create: if isAuthenticated()
+        && isOwner(objectID)
+        && request.resource.size < 5 * 1024 * 1024;
+      allow update: if isAuthenticated()
+        && isOwner(objectID)
+        && request.resource.size < 5 * 1024 * 1024;
+      allow delete: if isAuthenticated() && isOwner(objectID);
+    }
+  }
+
+  function isAuthenticated() {
+    return request.auth != null;
+  }
+
+  function isOwner(objectID) {
+    return request.auth.uid == firestore.get(
+      /databases/(default)/documents/posts/$(objectID)
+    ).data.authorUID;
+  }
+}

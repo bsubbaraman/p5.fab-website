@@ -1,8 +1,10 @@
 <script>
 	import { getFunctions, httpsCallable } from 'firebase/functions';
 	import { deleteUser } from 'firebase/auth';
+	import { deleteDoc, doc } from 'firebase/firestore';
 	import { store, authHandlers } from '../store/state.svelte.js';
 	import { toggleAuthContainer } from '$lib/events/auth.js';
+	import { db } from '../dbConfig';
 
 	let email = $state('');
 	let username = $state('');
@@ -14,21 +16,22 @@
 		authenticating = true;
 		let newUser = null;
 		try {
-			// Create the Firebase Auth user first
-			newUser = await authHandlers.signup(email, password);
+			// Create auth user and user doc
+			newUser = await authHandlers.signup(email, password, username);
 
-			// Atomically claim username and create user doc via Cloud Function
+			// Atomically claim the username via Cloud Function
 			const functions = getFunctions();
 			const claimUsername = httpsCallable(functions, 'claimUsername');
-			await claimUsername({ username, email });
+			await claimUsername({ username });
 
 			toggleAuthContainer();
 		} catch (err) {
-			// If username claim failed, delete the auth user we just created
+			// If username claim failed, roll back the auth user and user doc
 			if (newUser) {
+				await deleteDoc(doc(db, 'users', newUser.uid));
 				await deleteUser(newUser);
 			}
-			if (err.code === 'already-exists') {
+			if (err.code === 'functions/already-exists') {
 				alert('Username is taken — please choose another.');
 			} else if (err.code === 'auth/email-already-in-use') {
 				alert('An account with that email already exists.');

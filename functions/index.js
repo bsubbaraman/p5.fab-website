@@ -62,15 +62,14 @@ exports.onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {
   });
 });
 
-// Atomically claim a username and create the user document.
-// Called immediately after Firebase Auth account creation.
+// Atomically claim a username in the username registry.
+// Called immediately after Firebase Auth account + user doc creation.
 exports.claimUsername = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be signed in.");
   }
 
-  const {username, email} = request.data;
-  const uid = request.auth.uid;
+  const {username} = request.data;
 
   if (
     !username ||
@@ -83,7 +82,6 @@ exports.claimUsername = onCall(async (request) => {
   }
 
   const usernamesRef = db.doc("users/usernames");
-  const userRef = db.doc(`users/${uid}`);
 
   await db.runTransaction(async (t) => {
     const snap = await t.get(usernamesRef);
@@ -93,13 +91,6 @@ exports.claimUsername = onCall(async (request) => {
     }
     t.update(usernamesRef, {
       allUsernames: FieldValue.arrayUnion(username),
-    });
-    t.set(userRef, {
-      username: username,
-      email: email,
-      created: new Date(),
-      posts: {},
-      favorites: [],
     });
   });
 
