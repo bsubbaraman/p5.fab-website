@@ -1,6 +1,6 @@
 <script>
 	import { page } from '$app/state';
-	import { getDoc, doc, collection, addDoc, updateDoc } from 'firebase/firestore';
+	import { doc, updateDoc } from 'firebase/firestore';
 	import { db, storage } from '../dbConfig.js';
 	import { editorState, store, authHandlers } from '../store/state.svelte.js';
 	import { evalSketch } from '$lib/repl';
@@ -99,18 +99,6 @@
 			name: editorState.projectTitle,
 			modified: modifiedTime
 		});
-
-		// Update data for feed
-		const allPostsRef = doc(db, 'posts', 'allPosts');
-		const allPostsSnap = await getDoc(allPostsRef);
-		if (allPostsSnap.exists()) {
-			const data = allPostsSnap.data();
-			const objectData = data[editorState.currentObjectID];
-			objectData.name = editorState.projectTitle;
-			await updateDoc(allPostsRef, {
-				[editorState.currentObjectID]: objectData
-			});
-		}
 
 		editorState.saveText = 'saved';
 		const saveButton = document.getElementById('sketchSaveBtn');

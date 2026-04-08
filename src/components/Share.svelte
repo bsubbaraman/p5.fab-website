@@ -63,7 +63,7 @@
 				created: new Date(),
 				modified: null
 			};
-			const docRef = await addDoc(collection(db, 'posts'), dataToPost);
+			const docRef = await addDoc(collection(db, 'posts'), dataToUpdate);
 			const objectID = docRef.id;
 
 			// Add files to storage
@@ -88,20 +88,6 @@
 			posts[numPosts] = objectID;
 			await updateDoc(userRef, {
 				posts: posts
-			});
-
-			// Add to list of all posts
-			const allPostsRef = doc(db, 'posts', 'allPosts');
-			const dataForFeed = {
-				name: objectName,
-				hasFabricated: hasFabricated,
-				user: uid,
-				username: username,
-				created: new Date(),
-				thumbnail: fileURLs[0]
-			};
-			await updateDoc(allPostsRef, {
-				[objectID]: dataForFeed
 			});
 
 			// Open the new Fab page

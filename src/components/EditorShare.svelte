@@ -121,24 +121,6 @@
 				posts: posts
 			});
 
-			// Add to list of all posts
-			console.log('adding to all posts');
-			const allPostsRef = doc(db, 'posts', 'allPosts');
-			const dataForFeed = {
-				name: editorState.projectTitle,
-				hasFabricated: hasFabricated,
-				authorUID: uid,
-				username: username,
-				created: timeCreated,
-				isFork: isFork,
-				parentSketch: dataToPost.parentSketch,
-				thumbnail: fileURLs[0]
-			};
-			await updateDoc(allPostsRef, {
-				[objectID]: dataForFeed
-			});
-			console.log('all posts updated');
-
 			// If this is a fork, update the remix data
 			if (isFork) {
 				const parentRef = doc(db, 'posts', editorState.currentObjectID);
