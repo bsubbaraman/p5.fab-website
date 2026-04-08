@@ -1,8 +1,8 @@
 <script>
-	import { getDoc, doc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+	import { getFunctions, httpsCallable } from 'firebase/functions';
+	import { deleteUser } from 'firebase/auth';
 	import { store, authHandlers } from '../store/state.svelte.js';
 	import { toggleAuthContainer } from '$lib/events/auth.js';
-	import { db } from '../dbConfig';
 
 	let email = $state('');
 	let username = $state('');
@@ -10,33 +10,34 @@
 	let authenticating = false;
 
 	async function signUp() {
-		if (authenticating) {
-			return;
-		}
-		try {
-			// Check if username is taken
-			const docRef = doc(db, 'users', 'usernames');
-			const docSnap = await getDoc(docRef);
-			if (docSnap.exists()) {
-				const data = docSnap.data();
-				if (data.allUsernames.includes(username)) {
-					alert('username taken!');
-					return;
-				}
-			}
-
-			await authHandlers.signup(email, password, username);
-			await updateDoc(doc(db, 'users', 'usernames'), {
-				allUsernames: arrayUnion(username)
-			});
-		} catch (err) {
-			console.log('Authentication error', err);
-			alert(err);
-			// if (err.code === 'auth/email-already-in-use') {
-			// 	alert('email already in use!');
-			// }
-		}
+		if (authenticating) return;
 		authenticating = true;
+		let newUser = null;
+		try {
+			// Create the Firebase Auth user first
+			newUser = await authHandlers.signup(email, password);
+
+			// Atomically claim username and create user doc via Cloud Function
+			const functions = getFunctions();
+			const claimUsername = httpsCallable(functions, 'claimUsername');
+			await claimUsername({ username, email });
+
+			toggleAuthContainer();
+		} catch (err) {
+			// If username claim failed, delete the auth user we just created
+			if (newUser) {
+				await deleteUser(newUser);
+			}
+			if (err.code === 'already-exists') {
+				alert('Username is taken — please choose another.');
+			} else if (err.code === 'auth/email-already-in-use') {
+				alert('An account with that email already exists.');
+			} else {
+				alert(err.message);
+			}
+		} finally {
+			authenticating = false;
+		}
 	}
 
 	// can only sign up if all our checks pass

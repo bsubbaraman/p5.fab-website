@@ -1,8 +1,6 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { writable } from "svelte/store";
 import { auth } from "../dbConfig";
-import { getFirestore, doc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../dbConfig'
 
 
 
@@ -34,21 +32,9 @@ export const editorState = $state({
 })
 
 export const authHandlers = {
-    signup: async (email, password, username) => {
-        let uid = null;
-        await createUserWithEmailAndPassword(auth, email, password)
-            .then((userCredential) => {
-                uid = userCredential.user.uid;
-
-            });
-        await setDoc(doc(db, 'users', uid), {
-            username: username,
-            email: email,
-            created: new Date(),
-            posts: {},
-            favorites: [],
-        });
-
+    signup: async (email, password) => {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        return userCredential.user;
     },
     login: async (email, password) => {
         await signInWithEmailAndPassword(auth, email, password);
