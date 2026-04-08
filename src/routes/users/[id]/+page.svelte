@@ -61,7 +61,7 @@
 									<div class="project-photo-container">
 										<img
 											alt="Contributed project"
-											class="project-photo padding-bottom-std"
+											class="project-photo"
 											src={postData.thumbnail ?? postData.files?.[0]}
 										/>
 										{#if postData.isFork}

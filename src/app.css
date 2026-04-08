@@ -193,6 +193,7 @@ button:disabled:hover {
     overflow: hidden;
     display: flex;
     position: relative;
+    margin-bottom: 3.5%;
 }
 
 .project-photo {

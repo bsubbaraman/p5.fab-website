@@ -191,7 +191,7 @@
 								<div class="project-photo-container">
 									<img
 										alt="Contributed project"
-										class="project-photo padding-bottom-std"
+										class="project-photo"
 										src={parentData.thumbnail ?? parentData.files?.[0]}
 									/>
 									{#if parentData.isFork}
@@ -224,7 +224,7 @@
 										<div class="project-photo-container">
 											<img
 												alt="Contributed project"
-												class="project-photo padding-bottom-std"
+												class="project-photo"
 												src={fd.thumbnail ?? fd.files?.[0]}
 											/>
 											<div class="overlayText">Fork</div>
