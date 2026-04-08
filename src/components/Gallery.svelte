@@ -1,26 +1,17 @@
 <script>
-	import { store } from '../store/state.svelte.js';
-	import { db, storage } from '../dbConfig';
-	import { ref, listAll } from 'firebase/storage';
-	import { getDoc, doc, setDoc } from 'firebase/firestore';
+	import { db } from '../dbConfig';
+	import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 
 	let allData = $state();
 
 	async function fetchAllPosts() {
-		const docRef = doc(db, 'posts', 'allPosts');
-		const docSnap = await getDoc(docRef);
-
-		if (docSnap.exists()) {
-			allData = docSnap.data();
-		} else {
-			console.log('No such document!');
-		}
-
-		// Sort the posts by date for displaying
-		const sortedEntries = Object.entries(allData).sort((a, b) => {
-			return a[1].created.seconds - b[1].created.seconds;
+		const q = query(collection(db, 'posts'), orderBy('created', 'desc'));
+		const snap = await getDocs(q);
+		const result = {};
+		snap.forEach((doc) => {
+			if (doc.id !== 'allPosts') result[doc.id] = doc.data();
 		});
-		allData = Object.fromEntries(sortedEntries.reverse());
+		allData = result;
 	}
 
 	fetchAllPosts();
@@ -37,7 +28,7 @@
 							<img
 								alt="Contributed Project"
 								class="project-photo padding-bottom-std"
-								src={postData.thumbnail}
+								src={postData.thumbnail ?? postData.files?.[0]}
 							/>
 							{#if postData.isFork}
 								<div class="overlayText">Fork</div>

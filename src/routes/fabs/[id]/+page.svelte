@@ -1,27 +1,43 @@
 <script>
 	import Header from '../../../components/Header.svelte';
 	import { store } from '../../../store/state.svelte.js';
-	import { db, storage } from '../../../dbConfig';
-	import { ref, listAll } from 'firebase/storage';
-	import { getDoc, doc, setDoc, updateDoc, increment } from 'firebase/firestore';
+	import { db } from '../../../dbConfig';
+	import { getDoc, doc, updateDoc, deleteDoc, increment, arrayRemove } from 'firebase/firestore';
+	import { ref, listAll, deleteObject } from 'firebase/storage';
+	import { storage } from '../../../dbConfig';
 	import { toggleAuthContainer } from '$lib/events/auth';
 	import { getPostFromDB } from '$lib/dbLoadSave';
 	import ImageGallery from '../../../components/ImageGallery.svelte';
 	import RemixPane from '../../../components/RemixPane.svelte';
 	import Share from '../../../components/Share.svelte';
 
-	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
+	let { data } = $props();
 	let postData = $state();
 	let objectID = $state();
 	let docRef = $state();
+	let parentData = $state();
+	let forkData = $state({});
 	let galleryIndex = $state(0);
 	let displayShareScreen = $state(false);
 
 	async function fetchPostData() {
-		// Get info about the Fab
 		objectID = data.id;
 		postData = await getPostFromDB(objectID);
 		docRef = doc(db, 'posts', objectID);
+
+		if (postData.isFork && postData.parentSketch) {
+			parentData = await getPostFromDB(postData.parentSketch);
+		}
+
+		if (postData.numForks) {
+			const forkEntries = await Promise.all(
+				Object.values(postData.forks).map(async (fork) => {
+					const fd = await getPostFromDB(fork.objectID);
+					return [fork.objectID, { ...fd, authorUID: fork.authorUID, username: fork.username }];
+				})
+			);
+			forkData = Object.fromEntries(forkEntries);
+		}
 	}
 
 	function getDate() {
@@ -70,6 +86,20 @@
 		displayShareScreen = !displayShareScreen;
 	}
 
+	async function deletePost() {
+		if (!confirm('Delete this post? This cannot be undone.')) return;
+		// Delete all storage files
+		const storageFolder = ref(storage, objectID);
+		const listed = await listAll(storageFolder);
+		await Promise.all(listed.items.map((item) => deleteObject(item)));
+		// Remove post ID from user's posts array
+		const userRef = doc(db, 'users', store.user.uid);
+		await updateDoc(userRef, { posts: arrayRemove(objectID) });
+		// Delete the post document
+		await deleteDoc(docRef);
+		window.location.href = '/explore';
+	}
+
 	fetchPostData();
 </script>
 
@@ -77,18 +107,18 @@
 	<Header />
 	<div class="page-container card">
 		{#if displayShareScreen}
-			<Share bind:displayShareScreen {postData} {objectID} />
-		{:else if postData && store.allPostsData}
+			<Share bind:displayShareScreen {postData} {objectID} onSaved={fetchPostData} />
+		{:else if postData}
 			<div class="fabHeader">
 				<h1 class="fabName">{postData.name}</h1>
 				<span class="meta"
 					>by <b><a href="/users/{postData.authorUID}">{postData.username}</a></b></span
 				><br />
-				{#if postData.isFork}
+				{#if postData.isFork && parentData}
 					<span class="meta"
 						>remix of <b
 							><a data-sveltekit-reload href="/fabs/{postData.parentSketch}"
-								>{store.allPostsData[postData.parentSketch].name}</a
+								>{parentData.name}</a
 							></b
 						></span
 					><br />
@@ -97,6 +127,8 @@
 				{#if store.user && store.user.uid == postData.authorUID}
 					<br />
 					<span class="meta edit" onclick={toggleShareScreen}><b>edit</b></span>
+					&nbsp;·&nbsp;
+					<span class="meta edit delete" onclick={deletePost}><b>delete</b></span>
 				{/if}
 			</div>
 
@@ -146,14 +178,10 @@
 					{/if}
 					{postData.info}
 				</div>
-				{#if postData.isFork}
+				{#if postData.isFork && parentData}
 					<h3>Remixed from</h3>
 					<div class="remix-grid">
-						<div
-							class="project-tile {store.allPostsData[postData.parentSketch].isFork
-								? 'shadowRemix'
-								: 'shadow'}"
-						>
+						<div class="project-tile {parentData.isFork ? 'shadowRemix' : 'shadow'}">
 							<a
 								aria-label="Project page"
 								data-sveltekit-reload
@@ -163,55 +191,21 @@
 									<img
 										alt="Contributed project"
 										class="project-photo padding-bottom-std"
-										src={store.allPostsData[postData.parentSketch].thumbnail}
+										src={parentData.thumbnail ?? parentData.files?.[0]}
 									/>
-									{#if store.allPostsData[postData.parentSketch].isFork}
+									{#if parentData.isFork}
 										<div class="overlayText">Fork</div>
 									{/if}
 								</div>
 							</a>
 							<a data-sveltekit-reload href="/fabs/{postData.parentSketch}">
-								<div class="project-title padding-bottom-half">
-									{store.allPostsData[postData.parentSketch].name}
-								</div>
+								<div class="project-title padding-bottom-half">{parentData.name}</div>
 							</a>
-
 							<div class="author padding-bottom-std">
-								by <a href="/users/{postData.parentAuthor}"
-									>{store.allPostsData[postData.parentSketch].username}</a
-								>
+								by <a href="/users/{postData.parentAuthor}">{parentData.username}</a>
 							</div>
 						</div>
 					</div>
-					<!-- The below is for displaying parent in right margin -->
-					<!-- <div class="parentInfo">
-						<div class="project-tile shadow">
-							<a
-								aria-label="Project page"
-								data-sveltekit-reload
-								href="/fabs/{postData.parentSketch}"
-							>
-								<div class="project-photo-container">
-									<img
-										alt="Contributed project"
-										class="project-photo padding-bottom-std"
-										src={store.allPostsData[postData.parentSketch].thumbnail}
-									/>
-								</div>
-							</a>
-							<a data-sveltekit-reload href="/fabs/{postData.parentSketch}">
-								<div class="project-title padding-bottom-half">
-									{store.allPostsData[postData.parentSketch].name}
-								</div>
-							</a>
-
-							<div class="author padding-bottom-std">
-								by <a href="/users/{postData.parentAuthor}"
-									>{store.allPostsData[postData.parentSketch].username}</a
-								>
-							</div>
-						</div>
-					</div> -->
 				{/if}
 				<div class="forks">
 					<h3>Forks</h3>
@@ -219,30 +213,27 @@
 						No forks yet! Wanna make one?
 					{:else}
 						<div class="remix-grid">
-							{#each Object.entries(postData.forks) as [forkIndex, forkData]}
+							{#each Object.entries(forkData) as [forkID, fd]}
 								<div class="project-tile shadowRemix">
 									<a
 										aria-label="Project page"
 										data-sveltekit-reload
-										href="/fabs/{forkData.objectID}"
+										href="/fabs/{forkID}"
 									>
 										<div class="project-photo-container">
 											<img
 												alt="Contributed project"
 												class="project-photo padding-bottom-std"
-												src={store.allPostsData[forkData.objectID].thumbnail}
+												src={fd.thumbnail ?? fd.files?.[0]}
 											/>
 											<div class="overlayText">Fork</div>
 										</div>
 									</a>
-									<a data-sveltekit-reload href="/fabs/{forkData.objectID}">
-										<div class="project-title padding-bottom-half">
-											{store.allPostsData[forkData.objectID].name}
-										</div>
+									<a data-sveltekit-reload href="/fabs/{forkID}">
+										<div class="project-title padding-bottom-half">{fd.name}</div>
 									</a>
-
 									<div class="author padding-bottom-std">
-										by <a href="/users/{forkData.authorUID}">{forkData.username}</a>
+										by <a href="/users/{fd.authorUID}">{fd.username}</a>
 									</div>
 								</div>
 							{/each}
@@ -318,5 +309,9 @@
 
 	.edit {
 		cursor: pointer;
+	}
+
+	.delete {
+		color: #c00;
 	}
 </style>

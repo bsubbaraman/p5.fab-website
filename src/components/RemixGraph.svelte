@@ -1,8 +1,8 @@
 <script>
 	import { onMount } from 'svelte';
 	import * as d3 from 'd3';
-	import { store } from '../store/state.svelte.js';
-	import { getPostFromDB } from '$lib/dbLoadSave.js';
+	import { db } from '../dbConfig.js';
+	import { collection, getDocs } from 'firebase/firestore';
 
 	let { objectID } = $props();
 	let graphInitialized = $state(false);
@@ -211,8 +211,21 @@
 		}
 	}
 
-	function findConnectedPosts(postID) {
-		const allPostsData = Object.entries(store.allPostsData).map(([id, post]) => ({
+	let allPostsCache = null;
+
+	async function loadAllPosts() {
+		if (allPostsCache) return allPostsCache;
+		const snap = await getDocs(collection(db, 'posts'));
+		const result = {};
+		snap.forEach((doc) => {
+			if (doc.id !== 'allPosts') result[doc.id] = doc.data();
+		});
+		allPostsCache = result;
+		return result;
+	}
+
+	function findConnectedPosts(postID, allPostsRaw) {
+		const allPostsData = Object.entries(allPostsRaw).map(([id, post]) => ({
 			id,
 			img: post.thumbnail || null,
 			name: post.name,
@@ -313,16 +326,11 @@
 	}
 
 	async function makeRemixGraph() {
-		// Step 1: Get connected posts
-		const connectedPosts = findConnectedPosts(objectID);
-
-		// Step 2: Format as graphData
+		const allPostsRaw = await loadAllPosts();
+		const connectedPosts = findConnectedPosts(objectID, allPostsRaw);
 		const formatted = formatGraphData(connectedPosts);
 		renderGraph(formatted);
 		extractAvailableMaterials(formatted.nodes);
-
-		// Can't assign reactive state object directly?
-		// Assign nodes and links individually instead
 		graphData.nodes = formatted.nodes;
 		graphData.links = formatted.links;
 	}
@@ -367,16 +375,10 @@
 		renderGraph({ nodes: filteredNodes, links: filteredLinks });
 	}
 
-	$effect(() => {
-		if (store.allPostsData && !graphInitialized) {
-			makeRemixGraph().then(() => {
-				graphInitialized = true;
-			});
-		}
-	});
-
 	onMount(() => {
-		// makeGraph();
+		makeRemixGraph().then(() => {
+			graphInitialized = true;
+		});
 	});
 </script>
 

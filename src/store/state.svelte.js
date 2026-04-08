@@ -11,7 +11,6 @@ export const store = $state({
     user: null,
     loading: true,
     data: {},
-    allPostsData: null,
 })
 
 export const editorState = $state({
@@ -38,7 +37,6 @@ export const authHandlers = {
         const uid = userCredential.user.uid;
         await setDoc(doc(db, 'users', uid), {
             username: username,
-            email: email,
             created: new Date(),
             posts: {},
             favorites: [],

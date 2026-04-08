@@ -4,7 +4,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     match /users/{userId} {
-      allow read: if isSignedInAs(userId);
+      allow read: if true;
       allow update, delete: if isSignedInAs(userId);
       allow create: if isSignedInAs(userId);
     }
@@ -18,22 +18,23 @@ service cloud.firestore {
     match /posts/{postID} {
       // Anyone can read
       allow read: if true;
-      // Must be signed in to post, and must be the author
+      // Must be signed in to post, must be the author, and fields must be valid
       allow create: if isAuthenticated()
-        && request.auth.uid == request.resource.data.authorUID;
+        && request.auth.uid == request.resource.data.authorUID
+        && validPost(request.resource.data);
       // Owner can update their own post (but cannot change authorship)
       // Others can only increment likes or add a fork
-      allow update: if incrementingLikeCount()
-        || addingAFork()
+      allow update: if (isAuthenticated() && incrementingLikeCount())
+        || (isAuthenticated() && addingAFork())
         || (request.auth.uid == request.resource.data.authorUID
-          && request.auth.uid == resource.data.authorUID);
+          && request.auth.uid == resource.data.authorUID
+          && validPostUpdate(request.resource.data));
       allow delete: if request.auth.uid == resource.data.authorUID;
     }
 
-    // allPosts feed is written only by Cloud Functions (Admin SDK)
+    // allPosts is no longer used - locked down
     match /posts/allPosts {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if false;
     }
 
   }
@@ -45,6 +46,22 @@ service cloud.firestore {
 
   function isSignedInAs(uid) {
     return isAuthenticated() && request.auth.uid == uid;
+  }
+
+  function validPost(data) {
+    return data.name is string && data.name.size() <= 200
+      && data.info is string && data.info.size() <= 10000
+      && data.code is string && data.code.size() <= 100000
+      && data.hasFabricated in ['yes', 'no']
+      && data.isFork is bool
+      && data.favorites == 0
+      && data.numForks == 0;
+  }
+
+  function validPostUpdate(data) {
+    return data.name is string && data.name.size() <= 200
+      && data.info is string && data.info.size() <= 10000
+      && data.code is string && data.code.size() <= 100000;
   }
 
   function incrementingLikeCount() {

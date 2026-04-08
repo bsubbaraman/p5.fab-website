@@ -1,32 +1,41 @@
 <script>
 	import { onMount } from 'svelte';
-	import { store, authHandlers, editorState } from '../store/state.svelte.js';
+	import { editorState } from '../store/state.svelte.js';
 	import { getPostFromDB } from '$lib/dbLoadSave.js';
 	import Editor from './Editor.svelte';
 
 	let remixTreeHTML = '';
 
-	function getOriginator(objectID) {
-		if (!store.allPostsData[objectID].isFork) {
-			// This is the originating sketch, return to fork list
+	async function getOriginator(objectID) {
+		const postData = await getPostFromDB(objectID);
+		if (!postData || !postData.isFork) {
 			return objectID;
-		} else {
-			const parentID = store.allPostsData[objectID].parentSketch;
-			return getOriginator(parentID);
 		}
+		return getOriginator(postData.parentSketch);
+	}
+
+	function escapeHTML(str) {
+		return String(str)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
 	}
 
 	async function renderTree(nodeID) {
 		const nodeData = await getPostFromDB(nodeID);
 		const currentNode = nodeID == editorState.currentObjectID ? "class='current'" : '';
-		console.log(currentNode);
+		const safeName = escapeHTML(nodeData.name);
+		const safeUsername = escapeHTML(nodeData.username);
+		const safeAuthorUID = escapeHTML(nodeData.authorUID);
+		const safeNodeID = escapeHTML(nodeID);
 		remixTreeHTML += `<li>`;
-		remixTreeHTML += `<span ${currentNode}><code><a data-sveltekit-reload href='/sketch/${nodeID}'>${nodeData.name}</a><br/>by: <a data-sveltekit-reload href='/users/${nodeData.authorUID}'>${nodeData.username}</a></code></span>`;
+		remixTreeHTML += `<span ${currentNode}><code><a data-sveltekit-reload href='/sketch/${safeNodeID}'>${safeName}</a><br/>by: <a data-sveltekit-reload href='/users/${safeAuthorUID}'>${safeUsername}</a></code></span>`;
 		if (nodeData.numForks) {
 			remixTreeHTML += '<ul>';
-			for (const forkIndex in nodeData.forks) {
-				const forkData = nodeData.forks[forkIndex];
-				await renderTree(forkData.objectID);
+			for (const fork of nodeData.forks) {
+				await renderTree(fork.objectID);
 			}
 			remixTreeHTML += '</ul>';
 		}
@@ -36,9 +45,7 @@
 	}
 
 	export async function makeRemixTree() {
-		// Want to see the whole tree
-		// So first find the originating sketch for this tree;
-		const nodeZero = getOriginator(editorState.currentObjectID);
+		const nodeZero = await getOriginator(editorState.currentObjectID);
 		editorState.remixTree = await renderTree(nodeZero);
 		// Some template code if I want to add images later:
 		// const htmlToAdd = `

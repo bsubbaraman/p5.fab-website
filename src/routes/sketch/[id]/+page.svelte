@@ -115,7 +115,7 @@
 
 		<div id="right">
 			{#if initIframe}
-				<iframe title="fab" onload={handleIframeLoad} id="preview" src="/preview.html"></iframe>
+				<iframe title="fab" onload={handleIframeLoad} id="preview" src="/preview.html" sandbox="allow-scripts allow-same-origin"></iframe>
 			{/if}
 		</div>
 	</div>

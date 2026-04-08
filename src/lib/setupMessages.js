@@ -4,6 +4,7 @@ import { setOutput } from '$lib/repl.js';
 export function setupMessages() {
     // Setup messages with iframe
     window.addEventListener('message', function (e) {
+        if (e.origin !== window.location.origin && e.origin !== 'null') return;
         const message = e.data;
         if (!message) return;
 

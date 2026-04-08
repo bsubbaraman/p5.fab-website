@@ -1,42 +1,34 @@
 <script>
 	import Header from '../../../components/Header.svelte';
-	import { store } from '../../../store/state.svelte.js';
-	import { db, storage } from '../../../dbConfig';
-	import { ref, listAll } from 'firebase/storage';
-	import { getDoc, doc, setDoc } from 'firebase/firestore';
+	import { db } from '../../../dbConfig';
+	import { getDoc, doc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 
 	let { data } = $props();
 	let userData = $state();
 	let postsData = $state();
 
 	async function fetchUserData() {
-		// Get info about the user
 		const userID = data.id;
-		const docRef = doc(db, 'users', userID);
-		const docSnap = await getDoc(docRef);
 
+		// Get user profile
+		const docSnap = await getDoc(doc(db, 'users', userID));
 		if (docSnap.exists()) {
 			userData = docSnap.data();
 		} else {
 			console.log('No such user!');
+			return;
 		}
 
-		// Get post info
-		const postsRef = doc(db, 'posts', 'allPosts');
-		const postsSnap = await getDoc(postsRef);
-
-		if (postsSnap.exists()) {
-			postsData = postsSnap.data();
-		} else {
-			console.log('No such document!');
-		}
-
-		// Sort the posts by date for displaying
-		const sortedEntries = Object.entries(postsData).sort((a, b) => {
-			return a[1].created.seconds - b[1].created.seconds;
-		});
-
-		postsData = Object.fromEntries(sortedEntries.reverse());
+		// Get this user's posts, sorted by date
+		const q = query(
+			collection(db, 'posts'),
+			where('authorUID', '==', userID),
+			orderBy('created', 'desc')
+		);
+		const snap = await getDocs(q);
+		const result = {};
+		snap.forEach((doc) => { result[doc.id] = doc.data(); });
+		postsData = result;
 	}
 
 	function getDate() {
@@ -60,17 +52,17 @@
 			</div>
 
 			<h2>Posts</h2>
-			{#if Object.keys(userData.posts).length}
+			{#if postsData && Object.keys(postsData).length}
 				<div class="grid">
 					{#each Object.entries(postsData) as [postID, postData]}
-						{#if Object.values(userData.posts).includes(postID)}
+						{#if true}
 							<div class="project-tile {postData.isFork ? 'shadowRemix' : 'shadow'}">
 								<a aria-label="Project page" href="/fabs/{postID}">
 									<div class="project-photo-container">
 										<img
 											alt="Contributed project"
 											class="project-photo padding-bottom-std"
-											src={postData.thumbnail}
+											src={postData.thumbnail ?? postData.files?.[0]}
 										/>
 										{#if postData.isFork}
 											<div class="overlayText">Fork</div>

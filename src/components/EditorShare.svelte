@@ -1,14 +1,20 @@
 <script>
+	import imageCompression from 'browser-image-compression';
 	import { editorState, store } from '../store/state.svelte.js';
 	import { db, storage } from '../dbConfig.js';
 	import { getUserData } from '$lib/dbLoadSave.js';
-	import { getDoc, doc, collection, addDoc, updateDoc, increment } from 'firebase/firestore';
+	import { getDoc, doc, collection, addDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 	import Editor from './Editor.svelte';
+
+	const MAX_FILES = 5;
+	const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
 
 	let objectInfo = $state('');
 	let hasFabricated = $state('yes');
 	let files;
+	let filePreviewURLs = $state([]);
+	let selectedThumbnailIndex = $state(0);
 
 	function toggleSavePane() {
 		editorState.displaySaveScreen = !editorState.displaySaveScreen;
@@ -20,13 +26,14 @@
 
 	function handleFileSelect(e) {
 		if (!e.target.files) return;
-		files = e.target.files;
-		var selectedFiles = document.getElementById('selectedFiles');
-		for (var i = 0; i < files.length; i++) {
-			var f = files[i];
-			console.log(f);
-			selectedFiles.innerHTML += f.name + '<br/>';
+		if (e.target.files.length > MAX_FILES) {
+			alert(`Max ${MAX_FILES} images per post.`);
+			e.target.value = '';
+			return;
 		}
+		files = e.target.files;
+		selectedThumbnailIndex = 0;
+		filePreviewURLs = Array.from(files).map((f) => URL.createObjectURL(f));
 	}
 
 	async function postObject(event) {
@@ -67,7 +74,7 @@
 				isFork: isFork,
 				favorites: 0,
 				numForks: 0,
-				forks: {},
+				forks: [],
 				created: timeCreated,
 				modified: null,
 				parentSketch: isFork ? editorState.currentObjectID : null,
@@ -78,18 +85,17 @@
 			const objectID = docRef.id;
 
 			var fileURLs = [];
-			console.log('adding files to storage');
 			if (files) {
-				// Add user provided files to storage
+				// Compress and upload user-provided images
 				for (var i = 0; i < files.length; i++) {
-					var f = files[i];
-					const storageRef = ref(storage, objectID + '/' + f.name);
-					await uploadBytes(storageRef, f);
+					const compressed = await imageCompression(files[i], COMPRESSION_OPTIONS);
+					const storageRef = ref(storage, objectID + '/' + files[i].name);
+					await uploadBytes(storageRef, compressed);
 					const downloadURL = await getDownloadURL(storageRef);
 					fileURLs.push(downloadURL);
 				}
 			} else {
-				// if no files were uploaded, take a screenshot for the thumbnail
+				// Take a compressed JPEG screenshot for the thumbnail
 				const iframe = document.getElementById('preview');
 				const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
 				const canvas = iframeDoc.querySelector('canvas');
@@ -97,7 +103,7 @@
 					console.warn('Canvas not found in iframe.');
 					return;
 				}
-				const dataURL = canvas.toDataURL('image/png');
+				const dataURL = canvas.toDataURL('image/jpeg', 0.8);
 				try {
 					const storageRef = ref(storage, objectID + '/' + Date.now());
 					await uploadString(storageRef, dataURL, 'data_url');
@@ -107,18 +113,15 @@
 					console.log(e);
 				}
 			}
-			console.log('added files to storage');
 
 			await updateDoc(docRef, {
-				files: fileURLs
+				files: fileURLs,
+				thumbnail: fileURLs[selectedThumbnailIndex] ?? fileURLs[0] ?? null
 			});
 
 			// Add to the user's posts
-			var posts = userData.posts;
-			const numPosts = Object.keys(posts).length;
-			posts[numPosts] = objectID;
 			await updateDoc(userRef, {
-				posts: posts
+				posts: arrayUnion(objectID)
 			});
 
 			// If this is a fork, update the remix data
@@ -132,13 +135,8 @@
 					created: timeCreated
 				};
 				if (parentSnap.exists()) {
-					const parentData = parentSnap.data();
-					const numForks = parentData.numForks;
-					parentData.forks[numForks] = remixDataToUpdate;
-					parentData.numForks += 1;
-					console.log('update fork info');
 					await updateDoc(parentRef, {
-						forks: parentData.forks,
+						forks: arrayUnion(remixDataToUpdate),
 						numForks: increment(1)
 					});
 				} else {
@@ -195,7 +193,7 @@
 				<label for="no">No</label>
 			</div>
 			<label for="images">Files</label>
-			<button class="file-upload" onclick={uploadImages}>
+			<button class="file-upload" type="button" onclick={uploadImages}>
 				<i class="fa-solid fa-upload"></i><br />
 				<span class="upload-text">Upload an image (or a few!) of what you made!</span>
 				<input
@@ -204,11 +202,21 @@
 					class="input"
 					name="images"
 					onchange={handleFileSelect}
-					accept="image/png, image/jpeg, .js"
+					accept="image/png, image/jpeg"
 					multiple
 				/>
-				<div id="selectedFiles"></div>
 			</button>
+			{#if filePreviewURLs.length > 0}
+				<label>Thumbnail</label>
+				<div class="thumbnail-picker">
+					{#each filePreviewURLs as url, i}
+						<label class="thumb-option">
+							<input type="radio" bind:group={selectedThumbnailIndex} value={i} />
+							<img src={url} alt="Upload preview" class="thumb-preview {selectedThumbnailIndex === i ? 'thumb-selected' : ''}" />
+						</label>
+					{/each}
+				</div>
+			{/if}
 
 			<div class="submit">
 				<button onclick={postObject} type="submit" class="sign-up">Post!</button>
@@ -294,9 +302,31 @@
 		height: 80px;
 	}
 
-	#selectedFiles {
-		text-align: left;
-		margin-left: 10px;
-		font-size: 12px;
+	.thumbnail-picker {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-bottom: 12px;
+		margin-top: 8px;
+	}
+
+	.thumb-option {
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.thumb-option input[type='radio'] {
+		display: none;
+	}
+
+	.thumb-preview {
+		width: 80px;
+		height: 80px;
+		object-fit: cover;
+		border: 2px solid transparent;
+	}
+
+	.thumb-selected {
+		border-color: black;
 	}
 </style>
