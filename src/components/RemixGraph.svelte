@@ -107,7 +107,7 @@
 		// Image with clipPath
 		node
 			.append('image')
-			.attr('xlink:href', (d) => d.img || 'https://via.placeholder.com/40')
+			.attr('href', (d) => d.img || '')
 			.attr('width', nodeSize)
 			.attr('height', nodeSize)
 			.attr('x', -nodeSize / 2)
@@ -227,7 +227,7 @@
 	function findConnectedPosts(postID, allPostsRaw) {
 		const allPostsData = Object.entries(allPostsRaw).map(([id, post]) => ({
 			id,
-			img: post.thumbnail || null,
+			img: post.thumbnail ?? post.files?.[0] ?? null,
 			name: post.name,
 			username: post.username,
 			...post

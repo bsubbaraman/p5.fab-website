@@ -11,8 +11,6 @@
 	import { Prec } from '@codemirror/state';
 	import CodeMirror from 'svelte-codemirror-editor';
 
-	editorState.globalSketch = templateSketch;
-
 	// Setup keybindings
 	// Use Prec.highest to override default keybindings
 	// https://discuss.codemirror.net/t/overriding-certain-default-keymaps/6181

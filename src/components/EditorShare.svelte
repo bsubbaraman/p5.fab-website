@@ -15,6 +15,7 @@
 	let files;
 	let filePreviewURLs = $state([]);
 	let selectedThumbnailIndex = $state(0);
+	let isSubmitting = $state(false);
 
 	function toggleSavePane() {
 		editorState.displaySaveScreen = !editorState.displaySaveScreen;
@@ -38,6 +39,8 @@
 
 	async function postObject(event) {
 		event.preventDefault();
+		if (isSubmitting) return;
+		isSubmitting = true;
 
 		// TODO: Self-forking
 		const selfFork = false;
@@ -157,6 +160,7 @@
 			editorState.displaySaveScreen = false;
 		} catch (err) {
 			alert(err);
+			isSubmitting = false;
 		}
 	}
 </script>
@@ -219,7 +223,7 @@
 			{/if}
 
 			<div class="submit">
-				<button onclick={postObject} type="submit" class="sign-up">Post!</button>
+				<button onclick={postObject} type="button" class="sign-up" disabled={isSubmitting || !objectInfo}>{isSubmitting ? 'Posting...' : 'Post!'}</button>
 			</div>
 		</form>
 	</div>

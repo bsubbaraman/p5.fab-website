@@ -30,12 +30,13 @@
 		}
 
 		if (postData.numForks) {
-			const forkEntries = await Promise.all(
+			const forkEntries = (await Promise.all(
 				Object.values(postData.forks).map(async (fork) => {
 					const fd = await getPostFromDB(fork.objectID);
+					if (!fd) return null;
 					return [fork.objectID, { ...fd, authorUID: fork.authorUID, username: fork.username }];
 				})
-			);
+			)).filter(Boolean);
 			forkData = Object.fromEntries(forkEntries);
 		}
 	}

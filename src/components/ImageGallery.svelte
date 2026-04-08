@@ -68,6 +68,8 @@
 		display: block;
 		user-select: none;
 		transition: opacity 0.25s ease;
+		background: #f0f0f0;
+		color: transparent;
 	}
 	.controls {
 		position: absolute;

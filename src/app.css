@@ -200,6 +200,8 @@ button:disabled:hover {
     aspect-ratio: 1;
     object-fit: contain;
     display: block;
+    background: #f0f0f0;
+    color: transparent;
 }
 
 .project-tile {}

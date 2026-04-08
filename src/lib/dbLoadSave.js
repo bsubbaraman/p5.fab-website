@@ -21,7 +21,6 @@ export async function getPostFromDB(id) {
     if (docSnap.exists()) {
         return docSnap.data();
     } else {
-        alert("That post does not exist!");
-        return false;
+        return null;
     }
 }

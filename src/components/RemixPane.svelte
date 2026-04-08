@@ -24,7 +24,9 @@
 	}
 
 	async function renderTree(nodeID) {
+		console.log('working on:', nodeID)
 		const nodeData = await getPostFromDB(nodeID);
+		if (!nodeData) return;
 		const currentNode = nodeID == editorState.currentObjectID ? "class='current'" : '';
 		const safeName = escapeHTML(nodeData.name);
 		const safeUsername = escapeHTML(nodeData.username);
@@ -34,7 +36,7 @@
 		remixTreeHTML += `<span ${currentNode}><code><a data-sveltekit-reload href='/sketch/${safeNodeID}'>${safeName}</a><br/>by: <a data-sveltekit-reload href='/users/${safeAuthorUID}'>${safeUsername}</a></code></span>`;
 		if (nodeData.numForks) {
 			remixTreeHTML += '<ul>';
-			for (const fork of nodeData.forks) {
+			for (const fork of Object.values(nodeData.forks)) {
 				await renderTree(fork.objectID);
 			}
 			remixTreeHTML += '</ul>';

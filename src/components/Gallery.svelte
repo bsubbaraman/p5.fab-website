@@ -29,6 +29,7 @@
 								alt="Contributed Project"
 								class="project-photo padding-bottom-std"
 								src={postData.thumbnail ?? postData.files?.[0]}
+								loading="lazy"
 							/>
 							{#if postData.isFork}
 								<div class="overlayText">Fork</div>
