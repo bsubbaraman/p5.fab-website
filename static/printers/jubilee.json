@@ -1,0 +1,9 @@
+{
+  "name": "jubilee",
+  "baudRate": 250000,
+  "nozzleDiameter": 0.4,
+  "filamentDiameter": 1.75,
+  "maxX": 300,
+  "maxY": 300,
+  "maxZ": 300
+}

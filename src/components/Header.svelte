@@ -30,9 +30,6 @@
 					</div>
 				</div>
 			{/if} -->
-			<div class="menu-item">
-				<a>About</a>
-			</div>
 			{#if !store.user}
 				<div class="menu-item">
 					<a onclick={toggleAuthContainer}>Sign In</a>

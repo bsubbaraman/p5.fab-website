@@ -1,0 +1,9 @@
+{
+  "name": "ender3",
+  "baudRate": 115200,
+  "nozzleDiameter": 0.8,
+  "filamentDiameter": 1.75,
+  "maxX": 220,
+  "maxY": 220,
+  "maxZ": 250
+}

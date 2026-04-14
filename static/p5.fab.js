@@ -5,8 +5,6 @@ let _fab;
 let fab;
 let midiController;
 let _once = false;
-let _recoverCameraPosition = true;
-let _syncVizStream = true;
 
 const moveCommands = ["G0", "G1", "G2", "G3"];
 
@@ -66,54 +64,47 @@ p5.prototype.saveShape = function () {
   }
 };
 
+// Call fabDraw once, immediately after setup and before first draw()
+// predraw is called before every draw, so use _once to make sure we only run 1 time
+p5.prototype.predraw = function () {
+  if (!_once) {
+    _once = true;
 
-p5.prototype.predraw = (function (b) {
-  // Call fabDraw once, immediately after setup and before first draw()
-  // predraw is called before every draw, so use _once to make sure we only run 1 time
-  return function () {
-    if (!_once) {
-      _once = true;
+    // Preserve fab object & serial connection to visualize new sketch while the machine is running
+    if (typeof (fab) === "undefined") {
+      fab = createFab();
+    }
 
-      // Preserve fab object & serial connection to visualize new sketch while the machine is running
-      if (typeof (fab) === "undefined") {
-        fab = createFab();
-        // midiController = createMidiController(debug = true);
+    if (typeof fabDraw === "function") {
+      // Reset values to run fabDraw
+      _fab.lastAsyncPosition = new XYZEFC();
+      _fab.plannedPosition = new XYZEFC();
+      _fab.model = "";
+      _fab.commands = [];
+      _fab.commandsForRendering = [];
+      _fab.trace = [];
+      _fab.firstMoveComplete = false;
+      fabDraw();
+      _fab.parseGcode();
+
+      // New model needs to be synced after current print job
+      _fab.syncVizStream = true;
+    }
+
+    // In midi mode, we add default midiSetup() and midiDraw() functions
+    if (_fab.midiMode) {
+      if (typeof midiSetup === "function") {
+        _fab.midiSetup = midiSetup;
       }
-
-      if (typeof fabDraw === "function") {
-        // Reset values to run fabDraw
-        _fab.lastAsyncPosition = new XYZEFC();
-        _fab.asyncPosition = new XYZEFC();
-        // _fab.serial.write("M114\n");
-        // console.log("the async position after resetting values is", _fab.asyncPosition);
-        _fab.model = "";
-        _fab.commands = [];
-        _fab.commandsForRendering = [];
-        _fab.trace = [];
-        _fab.firstMoveComplete = false;
-        fabDraw();
-        _fab.parseGcode();
-        // console.log(fab.commands)
-
-        // New model needs to be synced after current print job
-        _syncVizStream = true;
+      if (typeof midiDraw === "function") {
+        _fab.midiDraw = midiDraw;
       }
-
-      // In midi mode, we add default midiSetup() and midiDraw() functions
-      if (_fab.midiMode) {
-        if (typeof midiSetup === "function") {
-          _fab.midiSetup = midiSetup;
-        }
-        if (typeof midiDraw === "function") {
-          _fab.midiDraw = midiDraw;
-        }
-        else {
-          _fab.midiDraw = false;
-        }
+      else {
+        _fab.midiDraw = false;
       }
     }
-  };
-})();
+  }
+};
 
 p5.prototype.registerMethod("pre", p5.prototype.predraw);
 
@@ -183,11 +174,11 @@ class LinearMove {
 
   toString() {
     let xParam, yParam, zParam, eParam, fParam;
-    if (this.x) { xParam = 'X' + this.decimal(this.x) };
-    if (this.y) { yParam = 'Y' + this.decimal(this.y) };
-    if (this.z) { zParam = 'Z' + this.decimal(this.z) };
-    if (this.e) { eParam = 'E' + this.decimal(this.e) };
-    if (this.f) { fParam = 'F' + this.decimal(this.f) };
+    if (this.x !== null) { xParam = 'X' + this.decimal(this.x) };
+    if (this.y !== null) { yParam = 'Y' + this.decimal(this.y) };
+    if (this.z !== null) { zParam = 'Z' + this.decimal(this.z) };
+    if (this.e !== null) { eParam = 'E' + this.decimal(this.e) };
+    if (this.f !== null) { fParam = 'F' + this.decimal(this.f) };
     // if (this.comment) { commentParam = '; ' + this.comment}
 
     const parameters = [this.command, xParam, yParam, zParam, eParam, fParam];
@@ -200,6 +191,19 @@ class LinearMove {
 // Fab
 // Defaults to Ender3-Pro
 //===================================
+// Printer presets — loaded eagerly from /printers/<name>.json at script startup.
+// By the time a user runs a sketch these are guaranteed to be populated.
+const printerPresets = {};
+const _presetNames = ['ender3', 'prusa_mk3', 'jubilee'];
+Promise.all(
+  _presetNames.map((name) =>
+    fetch(`/printers/${name}.json`)
+      .then((r) => r.json())
+      .then((config) => { printerPresets[name] = config; })
+      .catch((e) => console.warn(`p5.fab: could not load preset "${name}"`, e))
+  )
+);
+
 const defaultPrinterSettings = {
   name: "ender3",
   baudRate: 115200,
@@ -225,7 +229,7 @@ class Fab {
     this.commandStream = [];                          // For streaming to the printer
     this.commandsForRendering = [];                   // Commands to be visualized
     this.lastAsyncPosition = new XYZEFC();            // Absolute positions used to plan toolpaths
-    this.asyncPosition = new XYZEFC();                // Absolute positions used to plan toolpaths
+    this.plannedPosition = new XYZEFC();                // Absolute positions used to plan toolpaths
     this.realtimePosition = new XYZEFC();             // Realtime positions used for interactive printing
     this.relativePositioning = false;                 // Position mode for XYZ; E is always relative
     this.nozzleT = 0;                                 // Nozzle temp in Celsius
@@ -263,16 +267,9 @@ class Fab {
       this.gcodeToMidiTimestamps = [];                 // testing for syncing midi times in fabscription
       this.sketch = "";                               // The code currently being run
       this.startTime = false;                         // TODO: null?
-      this.autoHomeComplete = false;                  // TODO: Can I remove this?
-      this.bufferSize = 512;                          // TODO: Can I remove this?
-      // default for Marlin; configure automatically?
-      this.bufferFillSize = 0;                        // TODO: Can I remove this?
-      this.bufferFilled = false;                      // TODO: Can I remove this?
-      this.numCommandsToFillBuffer = 0;               // TODO: Can I remove this?
-      this.videoStream;                               // TODO: Can I remove this?
-      this.mediaRecorder = null;                      // TODO: Can I remove this?
-      this.blobsRecorded = [];                        // TODO: Can I remove this?
-      this.hasDownloadedLog = false;                  // TODO: Can I remove this?
+      this.hasDownloadedLog = false;
+      this.recoverCameraPosition = true;
+      this.syncVizStream = true;
       this.lastRtPosCollected = 0;                    // Added for testing
       this.lastRtPosSent = 0;                    // Added for testing
       this.lastRoundTrip = 0;                    // Added for testing
@@ -299,21 +296,19 @@ class Fab {
   configure(config) {
     this.coordinateSystem = config.coordinateSystem;
     this.radius = config.radius;
-    this._nozzleDiameter = config.nozzleDiameter;
-    this._filamentDiameter = config.filamentDiameter;
+    this.nozzleDiameter = config.nozzleDiameter;
+    this.filamentDiameter = config.filamentDiameter;
     this.baudRate = config.baudRate;
     this.autoConnect = config.autoConnect;
     this.maxZ = config.maxZ;
     if (config.coordinateSystem == "delta") {
-      this.maxX = (2 * config.radius) / sqrt(2);
-      this.maxY = this.maxX;
+      this._maxX = (2 * config.radius) / sqrt(2);
+      this._maxY = this._maxX;
       this.centerX = 0;
       this.centerY = 0;
     } else {
       this.maxX = config.maxX;
       this.maxY = config.maxY;
-      this.centerX = config.maxX / 2;
-      this.centerY = config.maxY / 2;
     }
 
     var messageData = {
@@ -345,6 +340,36 @@ class Fab {
       value: this._filamentDiameter
     }
     console.log("FAB_CONFIG_CHANGE", messageData);
+  }
+
+  set maxX(v) {
+    this._maxX = v;
+    this.centerX = v / 2;
+    console.log("FAB_CONFIG_CHANGE", { property: "maxX", value: v });
+  }
+  get maxX() { return this._maxX; }
+
+  set maxY(v) {
+    this._maxY = v;
+    this.centerY = v / 2;
+    console.log("FAB_CONFIG_CHANGE", { property: "maxY", value: v });
+  }
+  get maxY() { return this._maxY; }
+
+  set maxZ(v) {
+    this._maxZ = v;
+    console.log("FAB_CONFIG_CHANGE", { property: "maxZ", value: v });
+  }
+  get maxZ() { return this._maxZ; }
+
+  setPrinter(name, overrides = {}) {
+    const preset = printerPresets[name];
+    if (!preset) {
+      const available = Object.keys(printerPresets).join(', ') || 'none loaded yet';
+      console.warn(`p5.fab: unknown printer preset "${name}". Available: ${available}`);
+      return;
+    }
+    this.configure({ ...defaultPrinterSettings, ...preset, ...overrides });
   }
 
   setupSerialConnection() {
@@ -380,7 +405,7 @@ class Fab {
       var messageData = {
         connected: _fab.connected,
       }
-      console.log("FAB_CONNECTION_CHANxGE", messageData);
+      console.log("FAB_CONNECTION_CHANGE", messageData);
     })
 
     if (this.autoConnect) {
@@ -395,7 +420,7 @@ class Fab {
     return stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
   }
 
-  add(cmd) {
+  enqueue(cmd) {
     if (this.fabscribe) {
       let trace = this.getStackTrace();
 
@@ -435,9 +460,9 @@ class Fab {
       if (!this.firstMoveComplete) {
         this.commands.push(cmd);
         this.firstMoveComplete = true;
-        this.asyncPosition.x = moveCommand.x == null ? this.asyncPosition.x : moveCommand.x;
-        this.asyncPosition.y = moveCommand.y == null ? this.asyncPosition.y : moveCommand.y;
-        this.asyncPosition.z = moveCommand.z == null ? this.asyncPosition.z : moveCommand.z;
+        this.plannedPosition.x = moveCommand.x == null ? this.plannedPosition.x : moveCommand.x;
+        this.plannedPosition.y = moveCommand.y == null ? this.plannedPosition.y : moveCommand.y;
+        this.plannedPosition.z = moveCommand.z == null ? this.plannedPosition.z : moveCommand.z;
         this.lastAsyncPosition.x = moveCommand.x == null ? this.lastAsyncPosition.x : moveCommand.x;
         this.lastAsyncPosition.y = moveCommand.y == null ? this.lastAsyncPosition.y : moveCommand.y;
         this.lastAsyncPosition.z = moveCommand.z == null ? this.lastAsyncPosition.z : moveCommand.z;
@@ -445,13 +470,13 @@ class Fab {
       }
 
       // Find the distance between current and last positions
-      const dist = sqrt((this.asyncPosition.x - this.lastAsyncPosition.x) ** 2 + (this.asyncPosition.y - this.lastAsyncPosition.y) ** 2 + (this.asyncPosition.z - this.lastAsyncPosition.z) ** 2)
+      const dist = sqrt((this.plannedPosition.x - this.lastAsyncPosition.x) ** 2 + (this.plannedPosition.y - this.lastAsyncPosition.y) ** 2 + (this.plannedPosition.z - this.lastAsyncPosition.z) ** 2)
       if (dist > segmentationLength) {
         // Get the equation of the line and segment into pieces of length segmentationLength
-        const m = new p5.Vector(this.asyncPosition.x - this.lastAsyncPosition.x, this.asyncPosition.y - this.lastAsyncPosition.y, this.asyncPosition.z - this.lastAsyncPosition.z);
+        const m = new p5.Vector(this.plannedPosition.x - this.lastAsyncPosition.x, this.plannedPosition.y - this.lastAsyncPosition.y, this.plannedPosition.z - this.lastAsyncPosition.z);
         const numSections = floor(dist / segmentationLength);
         const p_i = new p5.Vector(this.lastAsyncPosition.x, this.lastAsyncPosition.y, this.lastAsyncPosition.z);
-        const p_f = new p5.Vector(this.asyncPosition.x, this.asyncPosition.y, this.asyncPosition.z);
+        const p_f = new p5.Vector(this.plannedPosition.x, this.plannedPosition.y, this.plannedPosition.z);
 
         let i = 0;
         while (i < numSections) {
@@ -486,17 +511,7 @@ class Fab {
   }
 
   getRealtimePosition() {
-    // DUET
-    // TODO: Get tool offsets of current tool and apply
-    // TODO: The position query should probably be set in the constructor based on firmware
-    // first one is extruder0 on blubilee
     const positionQuery = `M118 S{"RT_POS " ^ "X:" ^ move.axes[0].machinePosition ^ " Y:" ^ move.axes[1].machinePosition + 42.75 ^ " Z:" ^ move.axes[2].machinePosition - 3.64}`;
-    // Youtubilee syringe 1 offsets: 0.5, 39, -102
-    // const positionQuery = `M118 S{"RT_POS " ^ "X:" ^ move.axes[0].machinePosition + 0.5 ^ " Y:" ^ move.axes[1].machinePosition + 39 ^ " Z:" ^ move.axes[2].machinePosition - 39}`;
-
-    // MARLIN
-    //  const positionQuery = `M114 R`;
-
 
     if (_fab.sentCommands[_fab.sentCommands.length - 1] != positionQuery) {
       _fab.commandStream.unshift(positionQuery);
@@ -514,9 +529,9 @@ class Fab {
       console.log("Print in progress, cant start a new print");
       return;
     }
-    if (!this.isPrinting && _syncVizStream) {
+    if (!this.isPrinting && this.syncVizStream) {
       this.commandStream = this.commands;
-      _syncVizStream = false;
+      this.syncVizStream = false;
 
       // TODO: If sync commands are needed, then start this interval after those are sent
       // Try taking this out and instead testing in fabscription
@@ -589,20 +604,14 @@ class Fab {
     }
   }
 
+
   fabscription(commandToSend) {
     this.sentCommands.push(commandToSend);
     // console.log('i just sent: ', commandToSend);
     // console.log('time since last check:', Date.now() - this.lastRoundTrip);
     this.lastRoundTrip = Date.now();
-    // I'm excluding E for now because we're not doing retraction with syringe/tpu printing
     // TODO: set position query in constructor based on firmware
-    // first one has blubilee offset
     const positionQuery = `M118 S{"RT_POS " ^ "X:" ^ move.axes[0].machinePosition ^ " Y:" ^ move.axes[1].machinePosition + 42.75 ^ " Z:" ^ move.axes[2].machinePosition - 3.64}`;
-    // this is syringe offset
-    // const positionQuery = `M118 S{"RT_POS " ^ "X:" ^ move.axes[0].machinePosition + 0.5 ^ " Y:" ^ move.axes[1].machinePosition + 39 ^ " Z:" ^ move.axes[2].machinePosition - 39}`;
-
-    // Marlin:
-    // const positionQuery = `M114 R`
     if (commandToSend != positionQuery) {
       this.sentCommandsFiltered.push(commandToSend);
     }
@@ -685,56 +694,55 @@ class Fab {
     g.printStream();
   }
 
-  onData() {
-    _fab.serialResp += _fab.serial.readString();
+  onData = () => {
+    this.serialResp += this.serial.readString();
 
-    if (_fab.serialResp.slice(-1) == "\n") {
-      if (_fab.serialResp.search("ok") > -1) {
-        if (_fab.isPrinting) {
-          _fab.emit("ok", _fab);
+    if (this.serialResp.slice(-1) == "\n") {
+      if (this.serialResp.search("ok") > -1) {
+        if (this.isPrinting) {
+          this.emit("ok", this);
         }
-        let currentTime = Date.now() - _fab.startTime;
+        let currentTime = Date.now() - this.startTime;
       }
-      console.log(_fab.serialResp);
+      // console.log(this.serialResp);
 
-      if (_fab.serialResp.search(" Count ") > -1) {
-        // _fab.reportedPos = _fab.serialResp.split(" Count ")[0].trim();
-        _fab.updateReportedPosition(_fab.serialResp.split(" Count ")[0].trim());
-        if (_fab.fabscribe) {
-          var logEntry = [Date.now() - _fab.startTime, _fab.reportedPos];
-          _fab.log.push(logEntry);
-          console.log('time since last position received: ', Date.now() - fab.lastRtPosCollected);
-          fab.lastRtPosCollected = Date.now();
+      if (this.serialResp.search(" Count ") > -1) {
+        this.updateReportedPosition(this.serialResp.split(" Count ")[0].trim());
+        if (this.fabscribe) {
+          var logEntry = [Date.now() - this.startTime, this.reportedPos];
+          this.log.push(logEntry);
+          console.log('time since last position received: ', Date.now() - this.lastRtPosCollected);
+          this.lastRtPosCollected = Date.now();
         }
       }
 
       // DUET
-      if (_fab.serialResp.search("RT_POS") > -1) {
-        const rtPos = _fab.serialResp.split("RT_POS")[1].split("\n")[0].trim();
-        const logEntry = [Date.now() - _fab.startTime, rtPos];
-        if (_fab.log.length == 0) {
-          _fab.log.push(logEntry);
+      if (this.serialResp.search("RT_POS") > -1) {
+        const rtPos = this.serialResp.split("RT_POS")[1].split("\n")[0].trim();
+        const logEntry = [Date.now() - this.startTime, rtPos];
+        if (this.log.length == 0) {
+          this.log.push(logEntry);
         }
-        else if (_fab.log.length > 0 && _fab.log[_fab.log.length - 1][1] !== rtPos) {
-          _fab.log.push(logEntry);
-          _fab.lastRtPosCollected = Date.now();
+        else if (this.log.length > 0 && this.log[this.log.length - 1][1] !== rtPos) {
+          this.log.push(logEntry);
+          this.lastRtPosCollected = Date.now();
         }
-        else if (_fab.log[_fab.log.length - 1][1] !== rtPos) {
+        else if (this.log[this.log.length - 1][1] !== rtPos) {
           console.log("Got data but I already have it!");
         }
       }
 
       // TODO: Remove/use a different strategy to auto download logs based on final position
-      if (_fab.serialResp.search("Print Finished") > -1) {
-        if (_fab.fabscribe) {
-          if (!_fab.hasDownloadedLog) {
-            _fab.downloadFabscriptionLog();
-            _fab.hasDownloadedLog = true;
+      if (this.serialResp.search("Print Finished") > -1) {
+        if (this.fabscribe) {
+          if (!this.hasDownloadedLog) {
+            this.downloadFabscriptionLog();
+            this.hasDownloadedLog = true;
           }
         }
       }
 
-      _fab.serialResp = "";
+      this.serialResp = "";
     }
   }
 
@@ -755,14 +763,14 @@ class Fab {
 
     if (!this.gotInitPosition) {
       console.log('updating initial position');
-      this.asyncPosition.x = this.reportedPos['X'];
-      this.asyncPosition.y = this.reportedPos['Y'];
-      this.asyncPosition.z = this.reportedPos['Z'];
+      this.plannedPosition.x = this.reportedPos['X'];
+      this.plannedPosition.y = this.reportedPos['Y'];
+      this.plannedPosition.z = this.reportedPos['Z'];
       this.lastAsyncPosition.x = this.reportedPos['X'];
       this.lastAsyncPosition.y = this.reportedPos['Y'];
       this.lastAsyncPosition.z = this.reportedPos['Z'];
       this.gotInitPosition = true;
-      // console.log(this.asyncPosition);
+      // console.log(this.plannedPosition);
       // fabDraw();
       // this.parseGcode();
     }
@@ -892,13 +900,13 @@ class Fab {
     pop();
 
     // Update camera position & orientation
-    if (_recoverCameraPosition) {
+    if (this.recoverCameraPosition) {
       this.camera.setPosition(
         this.cameraPosition.x,
         this.cameraPosition.y,
         this.cameraPosition.z
       );
-      _recoverCameraPosition = false;
+      this.recoverCameraPosition = false;
       this.camera.lookAt(
         this.cameraOrientation.x,
         this.cameraOrientation.y,
@@ -975,50 +983,44 @@ class Fab {
    */
   autoHome() {
     const cmd = "G28";
-    this.add(cmd);
-    this.add("G92 E0");
-
-    // TODO: Might be able to remove this?
-    // if (this.fabscribe) {
-    //   this.add("M118 Autohome complete"); // for transcription
-    //   this.add("G1 Z10 F50"); // for transcription; add a slow move to allow buffer to fill
-    // }
+    this.enqueue(cmd);
+    this.enqueue("G92 E0");
 
     return cmd;
   }
 
   setTemps(tNozzle, tBed) {
     let cmd = `M104 S${tNozzle}`; // set nozzle temp without waiting
-    this.add(cmd);
+    this.enqueue(cmd);
 
     cmd = `M140 S${tBed}`; // set bed temp without waiting
-    this.add(cmd);
+    this.enqueue(cmd);
 
     // now wait for both
     cmd = `M109 S${tNozzle}`;
-    this.add(cmd);
+    this.enqueue(cmd);
     cmd = `M190 S${tBed}`;
-    this.add(cmd);
+    this.enqueue(cmd);
 
     return cmd;
   }
 
   setNozzleTemp(t) {
     const cmd = `M109 S${t}`;
-    this.add(cmd);
+    this.enqueue(cmd);
     return cmd;
   }
 
   setBedTemp(t) {
     const cmd = `M190 S${t}`;
-    this.add(cmd);
+    this.enqueue(cmd);
     return cmd;
   }
 
   setAbsolutePosition() {
     this.relativePositioning = false;
     const cmd = "G90";
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   setAbsolutePositionXYZ() {
@@ -1033,22 +1035,22 @@ class Fab {
   setRelativePosition() {
     this.relativePositioning = true;
     const cmd = "G91";
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   setERelative() {
     const cmd = "M83";
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   fanOn() {
     const cmd = "M106";
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   fanOff() {
     const cmd = "M107";
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   pausePrint(t = null) {
@@ -1080,7 +1082,7 @@ class Fab {
 
   restartPrinter() {
     const cmd = "M999";
-    this.add(cmd);
+    this.enqueue(cmd);
     this.print();
   }
 
@@ -1090,50 +1092,26 @@ class Fab {
     this.moveExtrude(5, 200, z, 25);
     this.moveTo(8, 200, z, 25);
     this.moveExtrude(8, 20, z, 25);
-    // if (this.coordinateSystem != "delta") {
-    //   this.moveTo(5, 20, z, 85);
-    //   this.moveExtrude(5, 200, z, 25);
-    //   this.addComment("intro");
-    //   this.moveTo(8, 200.0, z, 85);
-    //   this.moveExtrude(8, 20.0, z, 25);
-    //   this.addComment("intro");
-    // } else {
-    //   for (let angle = 0; angle <= TWO_PI / 3; angle += TWO_PI / 50) {
-    //     let x = 90 * cos(angle);
-    //     let y = 90 * sin(angle);
-    //     if (angle == 0) {
-    //       fab.moveRetract(this.centerX + x, this.centerY + y, z, 30);
-    //     } else {
-    //       fab.moveExtrude(this.centerX + x, this.centerY + y, z, 5);
-    //     }
-    //   }
-    // }
-    // // adding header from cura intro
-    // this.add("G0 Z2.0 F3000");
-    // this.add("G0 X5 Y20 Z0.3 F5000.0");
   }
 
   presentPart() {
-    // var retractCmd = "G1 E-10.0 F6000";
-    // this.add(retractCmd);
-    this.moveToY(180, 60)
-    // var cmd = "G0 X0 Y180 F9000";
-    // this.add(cmd);
+    this.moveToY(180, 60);
   }
 
   waitCommand() {
     var cmd = "M400";
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   getPos() {
-    var cmd = "M114_DETAIL";
-    var cmd = "M114 D";
-    this.add(cmd);
+    const cmd = "M114 D";
+    this.enqueue(cmd);
   }
 
   setPos() {
-    var cmd = `G92 X${this.asyncPosition.x} Y${this.asyncPosition.y} Z${this.asyncPosition.z} E${this.asyncPosition.e}`;
+    const cmd = `G92 X${this.plannedPosition.x} Y${this.plannedPosition.y} Z${this.plannedPosition.z} E${this.plannedPosition.e}`;
+    this.enqueue(cmd);
+    return cmd;
   }
 
   autoReportPos(t = 10) {
@@ -1141,7 +1119,7 @@ class Fab {
     this.add("AUTO_REPORT_POSITION");
     t = parseInt(t);
     var cmd = `M154 S${t}`;
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   //===================================
@@ -1155,39 +1133,39 @@ class Fab {
     v = null,
     comment = ''
   } = {}) {
-    this.lastAsyncPosition = { ...this.asyncPosition };
+    this.lastAsyncPosition = { ...this.plannedPosition };
     if (!this.relativePositioning) {
-      if (x) { this.asyncPosition.x = parseFloat(x).toFixed(2) };
-      if (y) { this.asyncPosition.y = parseFloat(y).toFixed(2) };
-      if (z) { this.asyncPosition.z = parseFloat(z).toFixed(2) };
+      if (x !== null) { this.plannedPosition.x = parseFloat(x).toFixed(2) };
+      if (y !== null) { this.plannedPosition.y = parseFloat(y).toFixed(2) };
+      if (z !== null) { this.plannedPosition.z = parseFloat(z).toFixed(2) };
     }
     else {
       // console.log('relative move');
       // console.log(x, y, z);
-      if (x) { this.asyncPosition.x = (parseFloat(this.asyncPosition.x) + parseFloat(x)).toFixed(2) };
-      if (y) { this.asyncPosition.y = (parseFloat(this.asyncPosition.y) + parseFloat(y)).toFixed(2) };
-      if (z) { this.asyncPosition.z = (parseFloat(this.asyncPosition.z) + parseFloat(z)).toFixed(2) };
+      if (x !== null) { this.plannedPosition.x = (parseFloat(this.plannedPosition.x) + parseFloat(x)).toFixed(2) };
+      if (y !== null) { this.plannedPosition.y = (parseFloat(this.plannedPosition.y) + parseFloat(y)).toFixed(2) };
+      if (z !== null) { this.plannedPosition.z = (parseFloat(this.plannedPosition.z) + parseFloat(z)).toFixed(2) };
     }
 
     // E is relative
     if (e) {
       // CHANGED THIS TO toFixed(4) instead of 2
-      this.asyncPosition.e = parseFloat(e).toFixed(4);
+      this.plannedPosition.e = parseFloat(e).toFixed(4);
     }
     else {
-      this.asyncPosition.e = 0;
+      this.plannedPosition.e = 0;
     }
 
     if (v) {
       const f = this.mm_sec_to_mm_min(v);
-      this.asyncPosition.f = parseFloat(f).toFixed(2);
+      this.plannedPosition.f = parseFloat(f).toFixed(2);
     }
 
     if (comment) {
-      this.asyncPosition.c = `;${comment}`
+      this.plannedPosition.c = `;${comment}`
     }
     else {
-      this.asyncPosition.c = '';
+      this.plannedPosition.c = '';
     }
   }
 
@@ -1207,9 +1185,9 @@ class Fab {
 
     // Always send aboslute position?
     this.setAbsolutePositionXYZ();
-    const cmd = `${moveType} X${this.asyncPosition.x} Y${this.asyncPosition.y} Z${this.asyncPosition.z} E${this.asyncPosition.e} F${this.asyncPosition.f} ${this.asyncPosition.c} `;
+    const cmd = `${moveType} X${this.plannedPosition.x} Y${this.plannedPosition.y} Z${this.plannedPosition.z} E${this.plannedPosition.e} F${this.plannedPosition.f} ${this.plannedPosition.c} `;
 
-    this.add(cmd);
+    this.enqueue(cmd);
     return cmd;
   }
 
@@ -1314,9 +1292,9 @@ class Fab {
   extrudeX(dx, v, e, multiplier = false, comment = '') {
     // Move in X relative to current position while extruding
     if (e == null) {
-      e = this.makeE(parseFloat(this.asyncPosition.x) + parseFloat(dx), this.asyncPosition.y, this.asyncPosition.z);
+      e = this.makeE(parseFloat(this.plannedPosition.x) + parseFloat(dx), this.plannedPosition.y, this.plannedPosition.z);
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(this.asyncPosition.x) + parseFloat(dx), parseFloat(this.asyncPosition.y), parseFloat(this.asyncPosition.z));
+      e = e * this.makeE(parseFloat(this.plannedPosition.x) + parseFloat(dx), parseFloat(this.plannedPosition.y), parseFloat(this.plannedPosition.z));
     }
 
     this.setRelativePosition();
@@ -1326,9 +1304,9 @@ class Fab {
   extrudeXY(dx, dy, v, e, multiplier = false, comment = '') {
     // Move in X & Y relative to current position while extruding
     if (e == null) {
-      e = this.makeE(parseFloat(this.asyncPosition.x) + parseFloat(dx), parseFloat(this.asyncPosition.y) + parseFloat(dy), this.asyncPosition.z);
+      e = this.makeE(parseFloat(this.plannedPosition.x) + parseFloat(dx), parseFloat(this.plannedPosition.y) + parseFloat(dy), this.plannedPosition.z);
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(this.asyncPosition.x) + parseFloat(dx), parseFloat(this.asyncPosition.y) + parseFloat(dy), parseFloat(this.asyncPosition.z));
+      e = e * this.makeE(parseFloat(this.plannedPosition.x) + parseFloat(dx), parseFloat(this.plannedPosition.y) + parseFloat(dy), parseFloat(this.plannedPosition.z));
     }
 
     this.setRelativePosition();
@@ -1338,9 +1316,9 @@ class Fab {
   extrudeY(dy, v, e, multiplier = false) {
     // Move in Y relative to current position while extruding
     if (e == null) {
-      e = this.makeE(parseFloat(this.asyncPosition.x), parseFloat(this.asyncPosition.y) + parseFloat(dy), parseFloat(this.asyncPosition.z));
+      e = this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y) + parseFloat(dy), parseFloat(this.plannedPosition.z));
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(this.asyncPosition.x), parseFloat(this.asyncPosition.y) + parseFloat(dy), parseFloat(this.asyncPosition.z));
+      e = e * this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y) + parseFloat(dy), parseFloat(this.plannedPosition.z));
     }
 
     this.setRelativePosition();
@@ -1350,9 +1328,9 @@ class Fab {
   extrudeZ(dz, v, e, multiplier = false) {
     // Move in Z relative to current position while extruding
     if (e == null) {
-      e = this.makeE(parseFloat(this.asyncPosition.x), parseFloat(this.asyncPosition.y), parseFloat(this.asyncPosition.z) + parseFloat(dz));
+      e = this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y), parseFloat(this.plannedPosition.z) + parseFloat(dz));
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(this.asyncPosition.x), parseFloat(this.asyncPosition.y), parseFloat(this.asyncPosition.z) + parseFloat(dz));
+      e = e * this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y), parseFloat(this.plannedPosition.z) + parseFloat(dz));
     }
 
     this.setRelativePosition();
@@ -1362,9 +1340,9 @@ class Fab {
   extrudeToX(x, v, e, multiplier = false, comment = '') {
     // Move directly in X while extruding
     if (e == null) {
-      e = this.makeE(parseFloat(x), this.asyncPosition.y, this.asyncPosition.z);
+      e = this.makeE(parseFloat(x), this.plannedPosition.y, this.plannedPosition.z);
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(x), parseFloat(this.asyncPosition.y), parseFloat(this.asyncPosition.z));
+      e = e * this.makeE(parseFloat(x), parseFloat(this.plannedPosition.y), parseFloat(this.plannedPosition.z));
     }
 
     this.setAbsolutePositionXYZ();
@@ -1374,9 +1352,9 @@ class Fab {
   extrudeToY(y, v, e, multiplier = false, comment = '') {
     // Move directly in Y while extruding
     if (e == null) {
-      e = this.makeE(this.asyncPosition.x, parseFloat(y), this.asyncPosition.z);
+      e = this.makeE(this.plannedPosition.x, parseFloat(y), this.plannedPosition.z);
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(this.asyncPosition.x), parseFloat(y), parseFloat(this.asyncPosition.z));
+      e = e * this.makeE(parseFloat(this.plannedPosition.x), parseFloat(y), parseFloat(this.plannedPosition.z));
     }
 
     this.setAbsolutePositionXYZ();
@@ -1386,9 +1364,9 @@ class Fab {
   extrudeToXY(x, y, v, e, multiplier = false, comment = '') {
     // Move directly in X & Y while extruding
     if (e == null) {
-      e = this.makeE(parseFloat(x), parseFloat(y), this.asyncPosition.z);
+      e = this.makeE(parseFloat(x), parseFloat(y), this.plannedPosition.z);
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(x), parseFloat(y), parseFloat(this.asyncPosition.z));
+      e = e * this.makeE(parseFloat(x), parseFloat(y), parseFloat(this.plannedPosition.z));
     }
 
     this.setAbsolutePositionXYZ();
@@ -1398,9 +1376,9 @@ class Fab {
   extrudeToZ(z, v, e, multiplier = false, comment = '') {
     // Move directly in Z while extruding
     if (e == null) {
-      e = this.makeE(this.asyncPosition.x, this.asyncPosition.y, parseFloat(z));
+      e = this.makeE(this.plannedPosition.x, this.plannedPosition.y, parseFloat(z));
     } else if (multiplier) {
-      e = e * this.makeE(parseFloat(this.asyncPosition.x), parseFloat(this.asyncPosition.y), parseFloat(z));
+      e = e * this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y), parseFloat(z));
     }
 
     this.setAbsolutePositionXYZ();
@@ -1414,22 +1392,21 @@ class Fab {
   prime(de, v) {
     // To prime after a retraction, add ;prime comment to filter in rendering
     this.setRelativePosition();
-    this._moveXYZE({ e: de, v: v, comment: 'prime' });
+    this._moveXYZE({ e: de, v: v });
   }
 
   setMaxAcceleration(x, y, z) {
     var cmd = `M201 X${x} Y${y} Z${z};`;
-    this.add(cmd);
+    this.enqueue(cmd);
   }
   setStartAcceleration(a) {
     var cmd = `M204 P${a};`;
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   makeE(x, y, z) {
-    function dist3D(x, y, z) {
-      return sqrt((x - _fab.asyncPosition.x) ** 2 + (y - _fab.asyncPosition.y) ** 2 + (z - _fab.asyncPosition.z) ** 2);
-    }
+    const dist3D = (x, y, z) =>
+      sqrt((x - this.plannedPosition.x) ** 2 + (y - this.plannedPosition.y) ** 2 + (z - this.plannedPosition.z) ** 2);
     // CHANGED THIS to toFixed(4) instead of 2
     return (
       dist3D(x, y, z) * ((this._nozzleDiameter / 2) / (this._filamentDiameter / 2)) ** 2
@@ -1443,12 +1420,12 @@ class Fab {
   // TESTING FOR JUBILEE organize this later
   pickupTool(tool_idx) {
     var cmd = `T${tool_idx}`
-    this.add(cmd);
+    this.enqueue(cmd);
   }
 
   addComment(c) {
     _fab.commands[_fab.commands.length - 1] += ` ;${c}`;
-    _fab.commandStream[_fab.commands.length - 1] += ` ;${c}`;
+    _fab.commandStream[_fab.commandStream.length - 1] += ` ;${c}`;
   }
 
   downloadFabscriptionLog() {
@@ -1468,13 +1445,10 @@ class Fab {
   }
 }
 
-function mmPerMin(v) {
-  return v * 60.0; // convert from mm/sec to mm/min
-}
 
 function windowResized() {
   try {
-    _recoverCameraPosition = true;
+    _fab.recoverCameraPosition = true;
     resizeCanvas(windowWidth, windowHeight);
   }
   catch (e) {
