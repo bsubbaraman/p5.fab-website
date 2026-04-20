@@ -30,6 +30,9 @@
 					</div>
 				</div>
 			{/if} -->
+			<div class="menu-item">
+				<a href="/about" class:active={page.url.pathname == '/about'}>About</a>
+			</div>
 			{#if !store.user}
 				<div class="menu-item">
 					<a onclick={toggleAuthContainer}>Sign In</a>
