@@ -362,6 +362,16 @@ class Fab {
   }
   get maxZ() { return this._maxZ; }
 
+  /**
+   * Configure the fab instance for a specific printer preset, with optional overrides.
+   * @param {string} name - Printer preset name (e.g. `'ender3'`, `'prusa'`).
+   * @param {Object} [overrides={}] - Optional settings to override the preset (e.g. `{ nozzleDiameter: 0.4 }`).
+   * @example
+   * function setup() {
+   *   fab = new Fab();
+   *   fab.setPrinter('ender3', { nozzleDiameter: 0.4 });
+   * }
+   */
   setPrinter(name, overrides = {}) {
     const preset = printerPresets[name];
     if (!preset) {
@@ -849,6 +859,14 @@ class Fab {
     });
   }
 
+  /**
+   * Render a 3D preview of the planned toolpath. Call this inside a WEBGL p5.js `draw()` loop.
+   * @example
+   * function draw() {
+   *   background(255);
+   *   fab.render();
+   * }
+   */
   render() {
     if (this.coordinateSystem == "delta") {
       this.drawDeltaPrinter();
@@ -981,6 +999,14 @@ class Fab {
   /*****
    * G-Code Commands
    */
+  /**
+   * Home all axes and reset the extruder position.
+   * @example
+   * function fabDraw() {
+   *   fab.autoHome();
+   *   fab.setTemps(200, 60);
+   * }
+   */
   autoHome() {
     const cmd = "G28";
     this.enqueue(cmd);
@@ -989,6 +1015,16 @@ class Fab {
     return cmd;
   }
 
+  /**
+   * Set nozzle and bed temperatures and wait for both to be reached before continuing.
+   * @param {number} tNozzle - Target nozzle temperature in °C.
+   * @param {number} tBed - Target bed temperature in °C.
+   * @example
+   * function fabDraw() {
+   *   fab.autoHome();
+   *   fab.setTemps(200, 60);
+   * }
+   */
   setTemps(tNozzle, tBed) {
     let cmd = `M104 S${tNozzle}`; // set nozzle temp without waiting
     this.enqueue(cmd);
@@ -1005,12 +1041,20 @@ class Fab {
     return cmd;
   }
 
+  /**
+   * Set the nozzle temperature and wait for it to be reached before continuing.
+   * @param {number} t - Target nozzle temperature in °C.
+   */
   setNozzleTemp(t) {
     const cmd = `M109 S${t}`;
     this.enqueue(cmd);
     return cmd;
   }
 
+  /**
+   * Set the bed temperature and wait for it to be reached before continuing.
+   * @param {number} t - Target bed temperature in °C.
+   */
   setBedTemp(t) {
     const cmd = `M190 S${t}`;
     this.enqueue(cmd);
@@ -1043,21 +1087,34 @@ class Fab {
     this.enqueue(cmd);
   }
 
+  /**
+   * Turn the part cooling fan on at full speed.
+   */
   fanOn() {
     const cmd = "M106";
     this.enqueue(cmd);
   }
 
+  /**
+   * Turn the part cooling fan off.
+   */
   fanOff() {
     const cmd = "M107";
     this.enqueue(cmd);
   }
 
+  /**
+   * Pause the print for a given duration.
+   * @param {number|null} [t=null] - Duration in seconds. Defaults to 10s if not provided.
+   */
   pausePrint(t = null) {
     const cmd = t ? `M1 S${t}` : "M1 S10 this is a pause";
     this.commandStream.unshift(cmd);
   }
 
+  /**
+   * Immediately stop the print and clear the command queue.
+   */
   stopPrint() {
     console.log("FABSCRIBE STATUS:", this.fabscribe);
     this.commandStream = [];
@@ -1086,6 +1143,10 @@ class Fab {
     this.print();
   }
 
+  /**
+   * Print a priming line along the left edge of the bed to prepare the extruder.
+   * @param {number} [z=0.3] - Layer height for the intro line in mm.
+   */
   introLine(z = 0.3) {
     this.setAbsolutePositionXYZ();
     this.moveTo(5, 20, z, 25);
@@ -1191,20 +1252,54 @@ class Fab {
     return cmd;
   }
 
+  /**
+   * Move to an absolute XYZ position without extruding.
+   * @param {number} x - Target X position in mm.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} z - Target Z position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {string} [comment] - Optional G-code comment appended to the command.
+   * @example
+   * function fabDraw() {
+   *   fab.moveTo(100, 100, 5, 3000);
+   * }
+   */
   moveTo(x, y, z, v, comment) {
-    // Move directly to an absolute coordinate without extrusion.
     this.setAbsolutePositionXYZ();
     this._moveXYZE({ x: x, y: y, z: z, v: v, comment: comment });
   }
 
+  /**
+   * Move relative to the current position without extruding.
+   * @param {number} dx - Distance to move in X in mm.
+   * @param {number} dy - Distance to move in Y in mm.
+   * @param {number} dz - Distance to move in Z in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @example
+   * function fabDraw() {
+   *   fab.move(10, 0, 0, 3000); // move 10mm in X
+   * }
+   */
   move(dx, dy, dz, v) {
-    // Move relative to current position without extrusion.
     this.setRelativePosition();
     this._moveXYZE({ x: dx, y: dy, z: dz, v: v });
   }
 
+  /**
+   * Move to an absolute XYZ position while extruding filament.
+   * Extrusion amount is calculated automatically from the move distance if not provided.
+   * @param {number} x - Target X position in mm.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} z - Target Z position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @example
+   * function fabDraw() {
+   *   fab.moveExtrude(100, 100, 0.2, 1500); // extrude to (100, 100)
+   * }
+   */
   moveExtrude(x, y, z, v, e = null, multiplier = false) {
-    // Move to an absolute coordinate while extruding
     if (e == null) {
       e = this.makeE(x, y, z);
     } else if (multiplier) {
@@ -1215,82 +1310,138 @@ class Fab {
     this._moveXYZE({ x: x, y: y, z: z, e: e, v: v });
   }
 
+  /**
+   * Move to an absolute position with a filament retraction, z-hop, and re-prime.
+   * Use this to travel between disconnected extrusion paths without stringing.
+   * @param {number} x - Target X position in mm.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} z - Target Z position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number} [e=8] - Amount to retract/re-prime in mm.
+   * @example
+   * function fabDraw() {
+   *   fab.moveExtrude(50, 50, 0.2, 1500);
+   *   fab.moveRetract(100, 100, 0.2, 3000); // travel without stringing
+   *   fab.moveExtrude(150, 50, 0.2, 1500);
+   * }
+   */
   moveRetract(x, y, z, v, e = 8) {
-    // Move to an absolute position while retracting filament.
-
-    // First retract a bit
     this.moveE(-1 * e);
-
-    // Pop the nozzle up
     this.moveZ(0.2);
-
-    // Move to the position
     this.setAbsolutePositionXYZ()
     this._moveXYZE({ x: x, y: y, z: z, v: v });
-
-    // Prime the nozzle
     this.prime(e);
-
-    // Pop the nozzle back down
     this.moveZ(-0.2);
   }
 
-
+  /**
+   * Move to an absolute position with a 2mm z-hop over the travel path.
+   * @param {number} x - Target X position in mm.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} z - Target Z position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @example
+   * function fabDraw() {
+   *   fab.travelTo(100, 100, 0.2, 3000);
+   * }
+   */
   travelTo(x, y, z, v) {
-    // Move to an absolute coordinate with a z hop
     this.move(0, 0, 2);
     this.setAbsolutePositionXYZ();
     this._moveXYZE({ x: x, y: y, z: z, v: v });
     this.move(0, 0, -2);
   }
 
+  /**
+   * Move to an absolute X position without extruding.
+   * @param {number} x - Target X position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveToX(x, v) {
-    // Move directly to an absolue X coordinate without extruding
     this.setAbsolutePositionXYZ();
     this._moveXYZE({ x: x, v: v });
   }
 
+  /**
+   * Move to an absolute Y position without extruding.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveToY(y, v) {
-    // Move directly to an absolue Y coordinate without extruding
     this.setAbsolutePositionXYZ();
     this._moveXYZE({ y: y, v: v });
   }
 
+  /**
+   * Move to an absolute Z position without extruding.
+   * @param {number} z - Target Z position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveToZ(z, v) {
-    // Move directly to an absolue Z coordinate without extruding
     this.setAbsolutePositionXYZ();
     this._moveXYZE({ z: z, v: v });
   }
 
+  /**
+   * Move the extruder to an absolute E position.
+   * @param {number} e - Target E position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveToE(e, v) {
-    // Move directly to an absolue E coordinate without extruding
     this.setAbsolutePositionXYZ();
     this._moveXYZE({ e: e, v: v });
   }
 
+  /**
+   * Move a relative distance in X without extruding.
+   * @param {number} dx - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveX(dx, v) {
-    // Move in X relative to current position without extruding
     this.move(dx, 0, 0, v)
   }
 
+  /**
+   * Move a relative distance in Y without extruding.
+   * @param {number} dy - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveY(dy, v) {
-    // Move in Y relative to current position without extruding
     this.move(0, dy, 0, v)
   }
 
+  /**
+   * Move a relative distance in Z without extruding.
+   * @param {number} dz - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveZ(dz, v) {
-    // Move in Z relative to current position without extruding
     this.move(0, 0, dz, v)
   }
 
+  /**
+   * Move the extruder a relative distance in E.
+   * @param {number} de - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   moveE(de, v) {
-    // Move in E relative to current position without extruding
     this.setRelativePosition();
     this._moveXYZE({ e: de, v: v });
   }
 
+  /**
+   * Move a relative distance in X while extruding.
+   * @param {number} dx - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @param {string} [comment=''] - Optional G-code comment.
+   * @example
+   * function fabDraw() {
+   *   fab.extrudeX(50, 1500); // extrude a 50mm line in X
+   * }
+   */
   extrudeX(dx, v, e, multiplier = false, comment = '') {
-    // Move in X relative to current position while extruding
     if (e == null) {
       e = this.makeE(parseFloat(this.plannedPosition.x) + parseFloat(dx), this.plannedPosition.y, this.plannedPosition.z);
     } else if (multiplier) {
@@ -1301,8 +1452,20 @@ class Fab {
     this._moveXYZE({ x: dx, e: e, v: v, comment: comment });
   }
 
+  /**
+   * Move a relative distance in X and Y while extruding.
+   * @param {number} dx - Distance to move in X in mm.
+   * @param {number} dy - Distance to move in Y in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @param {string} [comment=''] - Optional G-code comment.
+   * @example
+   * function fabDraw() {
+   *   fab.extrudeXY(30, 40, 1500); // extrude diagonally
+   * }
+   */
   extrudeXY(dx, dy, v, e, multiplier = false, comment = '') {
-    // Move in X & Y relative to current position while extruding
     if (e == null) {
       e = this.makeE(parseFloat(this.plannedPosition.x) + parseFloat(dx), parseFloat(this.plannedPosition.y) + parseFloat(dy), this.plannedPosition.z);
     } else if (multiplier) {
@@ -1313,8 +1476,14 @@ class Fab {
     this._moveXYZE({ x: dx, y: dy, e: e, v: v, comment: comment });
   }
 
+  /**
+   * Move a relative distance in Y while extruding.
+   * @param {number} dy - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   */
   extrudeY(dy, v, e, multiplier = false) {
-    // Move in Y relative to current position while extruding
     if (e == null) {
       e = this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y) + parseFloat(dy), parseFloat(this.plannedPosition.z));
     } else if (multiplier) {
@@ -1325,8 +1494,14 @@ class Fab {
     this._moveXYZE({ y: dy, e: e, v: v });
   }
 
+  /**
+   * Move a relative distance in Z while extruding.
+   * @param {number} dz - Distance to move in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   */
   extrudeZ(dz, v, e, multiplier = false) {
-    // Move in Z relative to current position while extruding
     if (e == null) {
       e = this.makeE(parseFloat(this.plannedPosition.x), parseFloat(this.plannedPosition.y), parseFloat(this.plannedPosition.z) + parseFloat(dz));
     } else if (multiplier) {
@@ -1337,8 +1512,15 @@ class Fab {
     this._moveXYZE({ z: dz, e: e, v: v });
   }
 
+  /**
+   * Move to an absolute X position while extruding.
+   * @param {number} x - Target X position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @param {string} [comment=''] - Optional G-code comment.
+   */
   extrudeToX(x, v, e, multiplier = false, comment = '') {
-    // Move directly in X while extruding
     if (e == null) {
       e = this.makeE(parseFloat(x), this.plannedPosition.y, this.plannedPosition.z);
     } else if (multiplier) {
@@ -1349,8 +1531,15 @@ class Fab {
     this._moveXYZE({ x: x, e: e, v: v, comment: comment });
   }
 
+  /**
+   * Move to an absolute Y position while extruding.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @param {string} [comment=''] - Optional G-code comment.
+   */
   extrudeToY(y, v, e, multiplier = false, comment = '') {
-    // Move directly in Y while extruding
     if (e == null) {
       e = this.makeE(this.plannedPosition.x, parseFloat(y), this.plannedPosition.z);
     } else if (multiplier) {
@@ -1361,8 +1550,20 @@ class Fab {
     this._moveXYZE({ y: y, e: e, v: v, comment: comment });
   }
 
+  /**
+   * Move to an absolute XY position while extruding.
+   * @param {number} x - Target X position in mm.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @param {string} [comment=''] - Optional G-code comment.
+   * @example
+   * function fabDraw() {
+   *   fab.extrudeToXY(100, 100, 1500); // extrude to absolute position
+   * }
+   */
   extrudeToXY(x, y, v, e, multiplier = false, comment = '') {
-    // Move directly in X & Y while extruding
     if (e == null) {
       e = this.makeE(parseFloat(x), parseFloat(y), this.plannedPosition.z);
     } else if (multiplier) {
@@ -1373,8 +1574,15 @@ class Fab {
     this._moveXYZE({ x: x, y: y, e: e, v: v, comment: comment });
   }
 
+  /**
+   * Move to an absolute Z position while extruding.
+   * @param {number} z - Target Z position in mm.
+   * @param {number} v - Feedrate in mm/min.
+   * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+   * @param {string} [comment=''] - Optional G-code comment.
+   */
   extrudeToZ(z, v, e, multiplier = false, comment = '') {
-    // Move directly in Z while extruding
     if (e == null) {
       e = this.makeE(this.plannedPosition.x, this.plannedPosition.y, parseFloat(z));
     } else if (multiplier) {
@@ -1385,25 +1593,77 @@ class Fab {
     this._moveXYZE({ z: z, e: e, v: v, comment: comment });
   }
 
+  /**
+   * Extrude a circle centered at (x, y) at the given Z height.
+   * @param {number} x - Center X position in mm.
+   * @param {number} y - Center Y position in mm.
+   * @param {number} z - Z height in mm.
+   * @param {number} d - Diameter in mm.
+   * @param {number} [v] - Feedrate in mm/min.
+   * @param {number|null} [e=null] - Extrusion amount per segment. Calculated automatically if null.
+   * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on auto-calculated extrusion.
+   * @example
+   * function fabDraw() {
+   *   fab.circle(110, 110, 0.2, 20, 1500);
+   * }
+   */
+  circle(x, y, z, d, v, e = null, multiplier = false) {
+    const r = d / 2;
+    const segments = Math.max(16, Math.ceil(Math.PI * d));
+    this.moveRetract(x + r, y, z, v);
+    for (let i = 1; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      this.extrudeToXY(x + r * Math.cos(angle), y + r * Math.sin(angle), v, e, multiplier);
+    }
+  }
+
+  /**
+   * Set the feedrate for subsequent moves.
+   * @param {number} v - Feedrate in mm/min.
+   */
   setSpeed(v) {
     this._moveXYZE({ v: v });
   }
 
+  /**
+   * Prime the extruder by pushing filament forward. Used after a retraction.
+   * @param {number} de - Amount to prime in mm.
+   * @param {number} v - Feedrate in mm/min.
+   */
   prime(de, v) {
     // To prime after a retraction, add ;prime comment to filter in rendering
     this.setRelativePosition();
     this._moveXYZE({ e: de, v: v });
   }
 
+  /**
+   * Set the maximum acceleration for each axis.
+   * @param {number} x - Max X acceleration in mm/s².
+   * @param {number} y - Max Y acceleration in mm/s².
+   * @param {number} z - Max Z acceleration in mm/s².
+   */
   setMaxAcceleration(x, y, z) {
     var cmd = `M201 X${x} Y${y} Z${z};`;
     this.enqueue(cmd);
   }
+
+  /**
+   * Set the starting acceleration for print moves.
+   * @param {number} a - Acceleration in mm/s².
+   */
   setStartAcceleration(a) {
     var cmd = `M204 P${a};`;
     this.enqueue(cmd);
   }
 
+  /**
+   * Calculate the extrusion amount needed to move to an absolute XYZ position
+   * based on the current nozzle and filament diameters.
+   * @param {number} x - Target X position in mm.
+   * @param {number} y - Target Y position in mm.
+   * @param {number} z - Target Z position in mm.
+   * @returns {string} Extrusion amount in mm, fixed to 4 decimal places.
+   */
   makeE(x, y, z) {
     const dist3D = (x, y, z) =>
       sqrt((x - this.plannedPosition.x) ** 2 + (y - this.plannedPosition.y) ** 2 + (z - this.plannedPosition.z) ** 2);
@@ -1418,11 +1678,19 @@ class Fab {
   }
 
   // TESTING FOR JUBILEE organize this later
+  /**
+   * Select a tool by index (for multi-tool machines like Jubilee).
+   * @param {number} tool_idx - Zero-based tool index.
+   */
   pickupTool(tool_idx) {
     var cmd = `T${tool_idx}`
     this.enqueue(cmd);
   }
 
+  /**
+   * Append a comment to the last command in the queue.
+   * @param {string} c - Comment text (without the leading semicolon).
+   */
   addComment(c) {
     _fab.commands[_fab.commands.length - 1] += ` ;${c}`;
     _fab.commandStream[_fab.commandStream.length - 1] += ` ;${c}`;

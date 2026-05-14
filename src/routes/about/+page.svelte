@@ -40,7 +40,8 @@
 			>
 			to make authoring physical processes more like authoring code: a dynamic mode of creative inquiry
 			for insight and expression. If you have questions, comments, improvements, or anything else you
-			want to talk about, talk to him at <a href="mailto:b1air@uw.edu">b1air@uw.edu</a>!
+			want to talk about, don't hesitate to reach him at
+			<a href="mailto:b1air@uw.edu">b1air@uw.edu</a>!
 		</div>
 	</div>
 </main>
