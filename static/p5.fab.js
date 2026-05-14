@@ -2,7 +2,6 @@
 // Setup
 //===================================
 let _fab;
-let fab;
 let midiController;
 let _once = false;
 
@@ -12,7 +11,9 @@ const moveCommands = ["G0", "G1", "G2", "G3"];
 // Prototype Functions
 //===================================
 p5.prototype.createFab = function () {
-  _fab = new Fab();
+  if (!_fab) {
+    _fab = new Fab();
+  }
   return _fab;
 };
 
@@ -69,11 +70,6 @@ p5.prototype.saveShape = function () {
 p5.prototype.predraw = function () {
   if (!_once) {
     _once = true;
-
-    // Preserve fab object & serial connection to visualize new sketch while the machine is running
-    if (typeof (fab) === "undefined") {
-      fab = createFab();
-    }
 
     if (typeof fabDraw === "function") {
       // Reset values to run fabDraw
@@ -1700,12 +1696,12 @@ class Fab {
     console.log("DOWNLOADING")
     let logWriter = createWriter('fabLog.json');
     const dataToWrite = {
-      sketch: fab.sketch,
-      log: fab.log,
-      gcode: fab.sentCommandsFiltered,
-      stack: fab.trace,
-      midi: fab.midiRecording,
-      gcodeToMidiTime: fab.gcodeToMidiTimestamps,
+      sketch: this.sketch,
+      log: this.log,
+      gcode: this.sentCommandsFiltered,
+      stack: this.trace,
+      midi: this.midiRecording,
+      gcodeToMidiTime: this.gcodeToMidiTimestamps,
     }
 
     logWriter.write(JSON.stringify(dataToWrite, null, 4));
