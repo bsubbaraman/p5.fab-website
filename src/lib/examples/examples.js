@@ -3,7 +3,7 @@ export const templateSketch = `function setup() {
 }
 
 function fabDraw() {
-  console.log('fabdraw');
+  fab.autoHome();
   fab.moveExtrude(100, 100, 0);
 }
 
