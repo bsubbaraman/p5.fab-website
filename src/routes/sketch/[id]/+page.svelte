@@ -15,6 +15,7 @@
 	import RemixPane from '../../../components/RemixPane.svelte';
 	import Split from 'split.js';
 	import EditorLog from '../../../components/EditorLog.svelte';
+	import MachineStatus from '../../../components/MachineStatus.svelte';
 
 	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
 	let initIframe = $state(false);
@@ -116,9 +117,14 @@
 			</div>
 
 			<div id="right">
-				{#if initIframe}
-					<iframe title="fab" onload={handleIframeLoad} id="preview" src="/preview.html" sandbox="allow-scripts allow-same-origin allow-downloads"></iframe>
-				{/if}
+				<div id="right-top">
+					{#if initIframe}
+						<iframe title="fab" onload={handleIframeLoad} id="preview" src="/preview.html" sandbox="allow-scripts allow-same-origin allow-downloads"></iframe>
+					{/if}
+				</div>
+				<div id="right-bottom">
+					<MachineStatus />
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -129,10 +135,19 @@
 		width: 100%;
 		height: 100%;
 		border: 0;
+		display: block;
 	}
 
 	main {
 		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	:global(.split) {
+		flex: 1 !important;
+		height: auto !important;
+		min-height: 0;
 	}
 
 	#left-bottom {

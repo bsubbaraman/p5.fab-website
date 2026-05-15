@@ -4,6 +4,6 @@ import { evalCode } from "$lib/repl";
 // import { recordCamera } from "./connectToCamera";
 
 export function startPrint() {
-    evalCode(`_fab.print()`);
+    evalCode(`fab.print()`);
     // recordCamera();
 }

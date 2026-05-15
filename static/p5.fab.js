@@ -386,10 +386,7 @@
 
 			this.serial.on('open', function () {
 				_fab.connected = true;
-				var messageData = {
-					connected: _fab.connected
-				};
-				console.log('FAB_CONNECTION_CHANGE', messageData);
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'connection', connected: true } });
 
 				// Get position after connection is established
 				// _fab.serial.write("M114\n");
@@ -397,10 +394,7 @@
 
 			this.serial.on('close', function () {
 				_fab.connected = false;
-				var messageData = {
-					connected: _fab.connected
-				};
-				console.log('FAB_CONNECTION_CHANGE', messageData);
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'connection', connected: false } });
 			});
 
 			if (this.autoConnect) {
@@ -415,12 +409,7 @@
 		}
 
 		print() {
-			console.log('Starting print');
-
-			if (this.isPrinting) {
-				console.log('Print in progress, cant start a new print');
-				return;
-			}
+			if (this.isPrinting) { return; }
 			if (!this.isPrinting && this.syncVizStream) {
 				this.commandStream = this.commands;
 				this.syncVizStream = false;
@@ -428,14 +417,12 @@
 
 			if (this.commandStream.length > 0) {
 				this.isPrinting = true;
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_start' } });
 				this.serial.write(this.commandStream[0] + '\n');
 				this.commandStream.shift();
 			} else {
-				console.log('All commands sent!');
-
-				// TODO: It's still printing for a bit to finish all moves in the buffer,
-				//       so this isn't actually false yet.
 				this.isPrinting = false;
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } });
 			}
 		}
 
@@ -446,11 +433,8 @@
 				this.serial.write(this.commandStream[0] + '\n');
 				this.commandStream.shift();
 			} else {
-				console.log('All commands sent!');
-
-				// TODO: It's still printing for a bit to finish all moves in the buffer,
-				//       so this isn't actually false yet.
 				this.isPrinting = false;
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } });
 			}
 		}
 
@@ -1471,4 +1455,6 @@
 			console.log(e);
 		}
 	}
+	global.windowResized = windowResized;
+
 })(typeof window !== 'undefined' ? window : globalThis);

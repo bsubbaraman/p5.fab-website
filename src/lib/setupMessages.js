@@ -12,12 +12,25 @@ export function setupMessages() {
             ready: messageReady,
             error: messageError,
             output: messageOutput,
-            debug: messageDebug
+            debug: messageDebug,
+            fab_status: messageFabStatus,
         };
-        messageSwitch[message.type](message.body);
+        if (messageSwitch[message.type]) {
+            messageSwitch[message.type](message.body);
+        }
     });
 
     function messageReady(_) { }
+
+    function messageFabStatus(body) {
+        if (body.event === 'connection') {
+            editorState.machineStatus.connected = body.connected;
+        } else if (body.event === 'print_start') {
+            editorState.machineStatus.isPrinting = true;
+        } else if (body.event === 'print_complete') {
+            editorState.machineStatus.isPrinting = false;
+        }
+    }
 
     function messageDebug(messageBody) {
         console.log(messageBody);

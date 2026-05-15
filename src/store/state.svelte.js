@@ -29,6 +29,10 @@ export const editorState = $state({
     displayRemixPane: false,
     remixTree: null,
     sketchIsFork: null,
+    machineStatus: {
+        connected: false,
+        isPrinting: false,
+    },
 })
 
 export const authHandlers = {
