@@ -7,15 +7,6 @@ function fabDraw() {
   fab.moveExtrude(100, 100, 0);
 }
 
-function midiSetup(midiData) {
-
-}
-
-function midiDraw(moveCommand) {
-
-  return moveCommand;
-}
-
 function draw() {
   background(255);
   fab.render();

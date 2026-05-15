@@ -2,6 +2,7 @@
 // Setup
 //===================================
 let _fab;
+var fab;
 let midiController;
 let _once = false;
 
@@ -10,6 +11,26 @@ const moveCommands = ["G0", "G1", "G2", "G3"];
 //===================================
 // Prototype Functions
 //===================================
+/**
+ * Creates and returns the global `fab` object. Call this once in `setup()`.
+ *
+ * `createFab()` is a singleton — calling it multiple times returns the same
+ * instance, preserving any open serial connection across hot-reloads.
+ *
+ * **Hot-reload behavior:** In the copypastes.xyz editor, `setup()` re-runs
+ * every time you run your sketch. This means changes to `setup()` (e.g.
+ * `setPrinter()`, canvas size) take effect immediately. However, avoid
+ * creating p5.js DOM elements (`createButton()`, `createSlider()`, etc.) in
+ * `setup()` — they will be duplicated on each run.
+ *
+ * @memberof Fab
+ * @returns {Fab} The global fab instance.
+ * @example
+ * function setup() {
+ *   fab = createFab();
+ *   fab.setPrinter('ender3');
+ * }
+ */
 p5.prototype.createFab = function () {
   if (!_fab) {
     _fab = new Fab();
@@ -46,7 +67,7 @@ p5.RendererGL.prototype.saveShape = function () {
   // Assign gid to cache buffer
   g.gid = "saved|" + this._savedShapesCount;
 
-  // Shadow this function to avoid loosing edges when `model(...)` is called
+  // Shadow this function to avoid losing edges when `model(...)` is called
   g._makeTriangleEdges = function () {
     return this;
   };
@@ -65,40 +86,44 @@ p5.prototype.saveShape = function () {
   }
 };
 
-// Call fabDraw once, immediately after setup and before first draw()
-// predraw is called before every draw, so use _once to make sure we only run 1 time
+p5.prototype.reloadSketch = function () {
+  if (!_fab) {
+    console.warn("p5.fab: fab = createFab() was not called in setup(). Creating fab automatically.");
+    _fab = new Fab();
+    fab = _fab;
+  }
+  if (typeof fabDraw === "function") {
+    _fab.lastAsyncPosition = new XYZEFC();
+    _fab.plannedPosition = new XYZEFC();
+    _fab.model = "";
+    _fab.commands = [];
+    _fab.commandsForRendering = [];
+    _fab.trace = [];
+    _fab.firstMoveComplete = false;
+    fabDraw();
+    _fab.parseGcode();
+    _fab.syncVizStream = true;
+  }
+
+  if (_fab.midiMode) {
+    if (typeof midiSetup === "function") {
+      _fab.midiSetup = midiSetup;
+    }
+    if (typeof midiDraw === "function") {
+      _fab.midiDraw = midiDraw;
+    }
+    else {
+      _fab.midiDraw = false;
+    }
+  }
+};
+
+// Call reloadSketch once, immediately after setup and before first draw()
+// predraw is called before every draw, so use _once to ensure we only run once
 p5.prototype.predraw = function () {
   if (!_once) {
     _once = true;
-
-    if (typeof fabDraw === "function") {
-      // Reset values to run fabDraw
-      _fab.lastAsyncPosition = new XYZEFC();
-      _fab.plannedPosition = new XYZEFC();
-      _fab.model = "";
-      _fab.commands = [];
-      _fab.commandsForRendering = [];
-      _fab.trace = [];
-      _fab.firstMoveComplete = false;
-      fabDraw();
-      _fab.parseGcode();
-
-      // New model needs to be synced after current print job
-      _fab.syncVizStream = true;
-    }
-
-    // In midi mode, we add default midiSetup() and midiDraw() functions
-    if (_fab.midiMode) {
-      if (typeof midiSetup === "function") {
-        _fab.midiSetup = midiSetup;
-      }
-      if (typeof midiDraw === "function") {
-        _fab.midiDraw = midiDraw;
-      }
-      else {
-        _fab.midiDraw = false;
-      }
-    }
+    this.reloadSketch();
   }
 };
 
@@ -254,7 +279,6 @@ class Fab {
 
     // Fabscription Info
     if (this.fabscribe) {
-      console.log('fabscription enabled');
       this.sentCommands = [];                         // All commands sent so far
       this.sentCommandsFiltered = [];                 // Filter commands used to gather position
       this.log = [];                                  // Position data (TODO: RENAME)
@@ -283,7 +307,6 @@ class Fab {
     // TODO: Move into conditional above?
     this.positionQueryIntervalID = null;
 
-    // console.log("FABSCRIBE?", this.fabscribe);
   }
 
   //===================================
@@ -390,7 +413,7 @@ class Fab {
     });
 
     this.serial.on("requesterror", function () {
-      console.log("error!");
+      console.error("p5.fab: serial connection request failed.");
     });
 
     this.serial.on("data", this.onData);
@@ -523,13 +546,11 @@ class Fab {
       _fab.commandStream.unshift(positionQuery);
     }
     if (_fab.lastRtPosCollected - Date.now() > 500) {
-      console.log("******SLOW DATA******");
     }
   }
 
   print() {
     console.log("Starting print");
-    // console.log("GCODE TO MIDI TIMESTAMPS AT START:", this.gcodeToMidiTimestamps);ß
 
     if (this.isPrinting) {
       console.log("Print in progress, cant start a new print");
@@ -542,7 +563,6 @@ class Fab {
       // TODO: If sync commands are needed, then start this interval after those are sent
       // Try taking this out and instead testing in fabscription
       // because long foam prints had ~1second intervals between data collections
-      // console.log('am i fabscribing here to get rtpos?', this.fabscribe);
       this.fabscribe = false; // undefined if i don't set this here. why?
       if (this.fabscribe) {
         this.positionQueryIntervalID = setInterval(() => {
@@ -584,7 +604,6 @@ class Fab {
 
 
       this.serial.write(commandToSend + "\n");
-      // console.log("I just sent ", commandToSend);
 
       this.commandStream.shift();
       // get position after every command?
@@ -594,7 +613,6 @@ class Fab {
       // tpu
       const positionQuery = `M118 S{"RT_POS " ^ "X:" ^ move.axes[0].machinePosition ^ " Y:" ^ move.axes[1].machinePosition + 42.75 ^ " Z:" ^ move.axes[2].machinePosition - 3.64}`;
       // this.serial.write(positionQuery + "\n"); // this works for Marlin, but doesn't for Duet
-      // console.log("I just sent: ", positionQuery);
       this.fabscribe = false; // status is undefined if i don't add this here. why?
       if (this.fabscribe) { this.fabscription(commandToSend) };
     } else {
@@ -613,8 +631,6 @@ class Fab {
 
   fabscription(commandToSend) {
     this.sentCommands.push(commandToSend);
-    // console.log('i just sent: ', commandToSend);
-    // console.log('time since last check:', Date.now() - this.lastRoundTrip);
     this.lastRoundTrip = Date.now();
     // TODO: set position query in constructor based on firmware
     const positionQuery = `M118 S{"RT_POS " ^ "X:" ^ move.axes[0].machinePosition ^ " Y:" ^ move.axes[1].machinePosition + 42.75 ^ " Z:" ^ move.axes[2].machinePosition - 3.64}`;
@@ -622,7 +638,6 @@ class Fab {
       this.sentCommandsFiltered.push(commandToSend);
     }
     else {
-      // console.log("DELTA T: ", Date.now() - this.lastRtPosSent);
       this.lastRtPosSent = Date.now();
 
     }
@@ -654,7 +669,6 @@ class Fab {
       // Update the 'realtime' positions
       // This is technically a bit in front of real position depending on buffer size
       let moveCommand = new LinearMove(cmd);
-      // console.log('my coment here is: ', moveCommand.comment);
       if (moveCommand.x) { this.realtimePosition.x = moveCommand.x };
       if (moveCommand.y) { this.realtimePosition.y = moveCommand.y };
       if (moveCommand.z) { this.realtimePosition.z = moveCommand.z };
@@ -663,7 +677,6 @@ class Fab {
         // skip this if it contains the 'noMidi' tag
         // TODO: a robust way to do this
         if (moveCommand.comment && moveCommand.comment.includes('nomidi')) {
-          console.log('NOMIDI!');
           // skip if we are included a nomidi tag
         }
         else {
@@ -710,14 +723,12 @@ class Fab {
         }
         let currentTime = Date.now() - this.startTime;
       }
-      // console.log(this.serialResp);
 
       if (this.serialResp.search(" Count ") > -1) {
         this.updateReportedPosition(this.serialResp.split(" Count ")[0].trim());
         if (this.fabscribe) {
           var logEntry = [Date.now() - this.startTime, this.reportedPos];
           this.log.push(logEntry);
-          console.log('time since last position received: ', Date.now() - this.lastRtPosCollected);
           this.lastRtPosCollected = Date.now();
         }
       }
@@ -734,7 +745,6 @@ class Fab {
           this.lastRtPosCollected = Date.now();
         }
         else if (this.log[this.log.length - 1][1] !== rtPos) {
-          console.log("Got data but I already have it!");
         }
       }
 
@@ -753,7 +763,6 @@ class Fab {
   }
 
   updateReportedPosition(resp) {
-    console.log('updating reported position');
     resp.split(" ").forEach((item) => {
       if (item.includes("X:")) {
         this.reportedPos['X'] = item.split(":")[1];
@@ -768,7 +777,6 @@ class Fab {
     );
 
     if (!this.gotInitPosition) {
-      console.log('updating initial position');
       this.plannedPosition.x = this.reportedPos['X'];
       this.plannedPosition.y = this.reportedPos['Y'];
       this.plannedPosition.z = this.reportedPos['Z'];
@@ -776,7 +784,6 @@ class Fab {
       this.lastAsyncPosition.y = this.reportedPos['Y'];
       this.lastAsyncPosition.z = this.reportedPos['Z'];
       this.gotInitPosition = true;
-      // console.log(this.plannedPosition);
       // fabDraw();
       // this.parseGcode();
     }
@@ -956,7 +963,7 @@ class Fab {
     noFill();
     translate(0, -this.maxZ / 2 + 1, 0);
     stroke(220, 50, 32);
-    box(this.maxX, this.maxZ, this.maxY); // work envolope
+    box(this.maxX, this.maxZ, this.maxY); // work envelope
     pop();
 
     noFill();
@@ -984,7 +991,7 @@ class Fab {
     noFill();
     translate(0, -this.maxZ / 2 + 1, 0);
     stroke(220, 50, 32);
-    box((2 * this.radius) / sqrt(2), this.maxZ, (2 * this.radius) / sqrt(2)); // work envolope
+    box((2 * this.radius) / sqrt(2), this.maxZ, (2 * this.radius) / sqrt(2)); // work envelope
     pop();
 
     // not sure if needed
@@ -1112,7 +1119,6 @@ class Fab {
    * Immediately stop the print and clear the command queue.
    */
   stopPrint() {
-    console.log("FABSCRIBE STATUS:", this.fabscribe);
     this.commandStream = [];
     this.isPrinting = false;
     fabDraw();
@@ -1122,7 +1128,6 @@ class Fab {
     this.positionQueryIntervalID = null;
 
     if (this.fabscribe) {
-      console.log('not downloading log');
       // fab.downloadFabscriptionLog()
     };
 
@@ -1197,8 +1202,6 @@ class Fab {
       if (z !== null) { this.plannedPosition.z = parseFloat(z).toFixed(2) };
     }
     else {
-      // console.log('relative move');
-      // console.log(x, y, z);
       if (x !== null) { this.plannedPosition.x = (parseFloat(this.plannedPosition.x) + parseFloat(x)).toFixed(2) };
       if (y !== null) { this.plannedPosition.y = (parseFloat(this.plannedPosition.y) + parseFloat(y)).toFixed(2) };
       if (z !== null) { this.plannedPosition.z = (parseFloat(this.plannedPosition.z) + parseFloat(z)).toFixed(2) };
@@ -1693,7 +1696,6 @@ class Fab {
   }
 
   downloadFabscriptionLog() {
-    console.log("DOWNLOADING")
     let logWriter = createWriter('fabLog.json');
     const dataToWrite = {
       sketch: this.sketch,
