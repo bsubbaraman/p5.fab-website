@@ -104,6 +104,15 @@
 			<RemixPane />
 		{/if}
 
+		{#if editorState.printAlert}
+			<div class="alert-overlay">
+				<div class="alert-modal">
+					<p>{editorState.printAlert}</p>
+					<button onclick={() => (editorState.printAlert = null)}>Dismiss</button>
+				</div>
+			</div>
+		{/if}
+
 		<div class="split">
 			<div id="left">
 				<div id="left-top">
@@ -152,5 +161,36 @@
 
 	#left-bottom {
 		overflow: scroll;
+	}
+
+	.alert-overlay {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.4);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+	}
+
+	.alert-modal {
+		background: white;
+		border: 1px solid black;
+		box-shadow: 7px 7px var(--ma-orange);
+		padding: 2em;
+		max-width: 360px;
+		text-align: left;
+		font-family: 'Inter', sans-serif;
+	}
+
+	.alert-modal p {
+		margin: 0 0 1.25em;
+		font-size: 1em;
+		line-height: 1.5;
+	}
+
+	.alert-modal button {
+		display: block;
+		margin: 0 auto;
 	}
 </style>

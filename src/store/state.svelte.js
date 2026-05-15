@@ -32,7 +32,13 @@ export const editorState = $state({
     machineStatus: {
         connected: false,
         isPrinting: false,
+        nozzleTemp: null,
+        bedTemp: null,
+        x: null,
+        y: null,
+        z: null,
     },
+    printAlert: null,
 })
 
 export const authHandlers = {

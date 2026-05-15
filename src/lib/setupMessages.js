@@ -29,6 +29,19 @@ export function setupMessages() {
             editorState.machineStatus.isPrinting = true;
         } else if (body.event === 'print_complete') {
             editorState.machineStatus.isPrinting = false;
+        } else if (body.event === 'print_error') {
+            if (body.reason === 'already_printing') {
+                editorState.printAlert = 'A print is already running.';
+            } else if (body.reason === 'no_commands') {
+                editorState.printAlert = 'Nothing to print. Run your sketch first to generate commands.';
+            }
+        } else if (body.event === 'temp') {
+            if (body.nozzle !== undefined) editorState.machineStatus.nozzleTemp = body.nozzle;
+            if (body.bed !== undefined) editorState.machineStatus.bedTemp = body.bed;
+        } else if (body.event === 'position') {
+            if (body.x !== undefined) editorState.machineStatus.x = body.x;
+            if (body.y !== undefined) editorState.machineStatus.y = body.y;
+            if (body.z !== undefined) editorState.machineStatus.z = body.z;
         }
     }
 

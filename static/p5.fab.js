@@ -269,6 +269,7 @@
 			);
 			this.recoverCameraPosition = true;
 			this.syncVizStream = true;
+			this.tempQueryIntervalID = null;
 		}
 
 		//===================================
@@ -387,14 +388,20 @@
 			this.serial.on('open', function () {
 				_fab.connected = true;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'connection', connected: true } });
-
-				// Get position after connection is established
-				// _fab.serial.write("M114\n");
+				_fab.serial.write('M114\n');
+				_fab.tempQueryIntervalID = setInterval(() => {
+					if (!_fab.isPrinting) {
+						_fab.serial.write('M105\n');
+						_fab.serial.write('M114\n');
+					}
+				}, 2000);
 			});
 
 			this.serial.on('close', function () {
 				_fab.connected = false;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'connection', connected: false } });
+				clearInterval(_fab.tempQueryIntervalID);
+				_fab.tempQueryIntervalID = null;
 			});
 
 			if (this.autoConnect) {
@@ -409,8 +416,15 @@
 		}
 
 		print() {
-			if (this.isPrinting) { return; }
-			if (!this.isPrinting && this.syncVizStream) {
+			if (this.isPrinting) {
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_error', reason: 'already_printing' } });
+				return;
+			}
+			if (this.commands.length === 0) {
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_error', reason: 'no_commands' } });
+				return;
+			}
+			if (this.syncVizStream) {
 				this.commandStream = this.commands;
 				this.syncVizStream = false;
 			}
@@ -418,7 +432,9 @@
 			if (this.commandStream.length > 0) {
 				this.isPrinting = true;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_start' } });
-				this.serial.write(this.commandStream[0] + '\n');
+				const cmd = this.commandStream[0];
+				this.serial.write(cmd + '\n');
+				this._postPositionFromCmd(cmd);
 				this.commandStream.shift();
 			} else {
 				this.isPrinting = false;
@@ -430,7 +446,9 @@
 			// TODO: Do I need print() and printStream()?
 			if (this.commandStream.length > 0) {
 				this.isPrinting = true;
-				this.serial.write(this.commandStream[0] + '\n');
+				const cmd = this.commandStream[0];
+				this.serial.write(cmd + '\n');
+				this._postPositionFromCmd(cmd);
 				this.commandStream.shift();
 			} else {
 				this.isPrinting = false;
@@ -454,21 +472,47 @@
 			g.printStream();
 		}
 
+		_postPositionFromCmd(cmd) {
+			if (!/^G[01]\b/.test(cmd)) return;
+			const body = { event: 'position' };
+			const xMatch = cmd.match(/X([\d.-]+)/);
+			const yMatch = cmd.match(/Y([\d.-]+)/);
+			const zMatch = cmd.match(/Z([\d.-]+)/);
+			if (xMatch) body.x = parseFloat(xMatch[1]);
+			if (yMatch) body.y = parseFloat(yMatch[1]);
+			if (zMatch) body.z = parseFloat(zMatch[1]);
+			if (xMatch || yMatch || zMatch) {
+				window.parent.postMessage({ type: 'fab_status', body });
+			}
+		}
+
 		onData = () => {
 			this.serialResp += this.serial.readString();
 
-			if (this.serialResp.slice(-1) == '\n') {
-				if (this.serialResp.search('ok') > -1) {
-					if (this.isPrinting) {
-						this.emit('ok', this);
+			if (this.serialResp.slice(-1) !== '\n') return;
+
+			const lines = this.serialResp.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+			this.serialResp = '';
+
+			for (const line of lines) {
+				if (line.includes('ok') && this.isPrinting) {
+					this.emit('ok', this);
+				}
+
+				if (line.includes(' Count ')) {
+					this.updateReportedPosition(line.split(' Count ')[0].trim());
+				}
+
+				if (line.includes('T:') && line.includes('B:')) {
+					const nozzleMatch = line.match(/T:([\d.]+)/);
+					const bedMatch = line.match(/B:([\d.]+)/);
+					const tempBody = {};
+					if (nozzleMatch) tempBody.nozzle = parseFloat(nozzleMatch[1]);
+					if (bedMatch) tempBody.bed = parseFloat(bedMatch[1]);
+					if (nozzleMatch || bedMatch) {
+						window.parent.postMessage({ type: 'fab_status', body: { event: 'temp', ...tempBody } });
 					}
 				}
-
-				if (this.serialResp.search(' Count ') > -1) {
-					this.updateReportedPosition(this.serialResp.split(' Count ')[0].trim());
-				}
-
-				this.serialResp = '';
 			}
 		};
 
@@ -493,9 +537,17 @@
 				this.lastAsyncPosition.y = this.reportedPos['Y'];
 				this.lastAsyncPosition.z = this.reportedPos['Z'];
 				this.gotInitPosition = true;
-				// fabDraw();
-				// this.parseGcode();
 			}
+
+			window.parent.postMessage({
+				type: 'fab_status',
+				body: {
+					event: 'position',
+					x: parseFloat(this.reportedPos['X']),
+					y: parseFloat(this.reportedPos['Y']),
+					z: parseFloat(this.reportedPos['Z']),
+				}
+			});
 		}
 
 		parseGcode() {
@@ -1456,5 +1508,13 @@
 		}
 	}
 	global.windowResized = windowResized;
+
+	window.addEventListener('message', function (e) {
+		if (e.origin !== window.location.origin && e.origin !== 'null') return;
+		if (!e.data || e.data.type !== 'fab_command') return;
+		if (typeof fab !== 'undefined' && fab.serial) {
+			fab.serial.write(e.data.body.gcode + '\n');
+		}
+	});
 
 })(typeof window !== 'undefined' ? window : globalThis);
