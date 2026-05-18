@@ -34,6 +34,11 @@
 	p5.prototype.createFab = function () {
 		if (!_fab) {
 			_fab = new Fab();
+		} else {
+			// Defer camera re-init to the first draw() frame so it runs after
+			// createCanvas(), which creates a new renderer and resets _curCamera.
+			_fab._needsCameraReInit = true;
+			_fab.recoverCameraPosition = true;
 		}
 		global.fab = _fab;
 		return _fab;
@@ -94,6 +99,12 @@
 			);
 			_fab = new Fab();
 			global.fab = _fab;
+		} else {
+			// Re-run: createCanvas() in setup() replaced the p5 renderer, making
+			// _fab.camera stale. Defer camera recreation to the first render() call
+			// so it attaches to the current renderer (after all setup code has run).
+			_fab._needsCameraReInit = true;
+			_fab.recoverCameraPosition = true;
 		}
 		if (typeof fabDraw === 'function') {
 			_fab.lastAsyncPosition = new XYZEFC();
@@ -261,13 +272,10 @@
 			this.model = '';
 			this.camera = createCamera();
 			this.camera.setPosition(0, 0, 400);
-			this.cameraPosition = new p5.Vector(this.camera.eyeX, this.camera.eyeY, this.camera.eyeZ);
-			this.cameraOrientation = new p5.Vector(
-				this.camera.centerX,
-				this.camera.centerY,
-				this.camera.centerZ
-			);
-			this.recoverCameraPosition = true;
+			this.cameraPosition = new p5.Vector(0, 0, 400);
+			this.cameraOrientation = new p5.Vector(0, 0, 0);
+			this.setCameraView('home');  // uses maxX/maxY/maxZ already set by configure()
+			this._needsCameraReInit = false;
 			this.syncVizStream = true;
 			this.tempQueryIntervalID = null;
 		}
@@ -302,6 +310,9 @@
 				filamentDiameter: this.filamentDiameter
 			};
 			console.log('FAB_CONFIG', messageData);
+			if (this.cameraPosition) {
+				this.setCameraView('home');
+			}
 		}
 
 		set nozzleDiameter(d) {
@@ -387,7 +398,10 @@
 
 			this.serial.on('open', function () {
 				_fab.connected = true;
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'connection', connected: true } });
+				window.parent.postMessage({
+					type: 'fab_status',
+					body: { event: 'connection', connected: true }
+				});
 				_fab.serial.write('M114\n');
 				_fab.tempQueryIntervalID = setInterval(() => {
 					if (!_fab.isPrinting) {
@@ -399,7 +413,10 @@
 
 			this.serial.on('close', function () {
 				_fab.connected = false;
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'connection', connected: false } });
+				window.parent.postMessage({
+					type: 'fab_status',
+					body: { event: 'connection', connected: false }
+				});
 				clearInterval(_fab.tempQueryIntervalID);
 				_fab.tempQueryIntervalID = null;
 			});
@@ -417,11 +434,17 @@
 
 		print() {
 			if (this.isPrinting) {
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_error', reason: 'already_printing' } });
+				window.parent.postMessage({
+					type: 'fab_status',
+					body: { event: 'print_error', reason: 'already_printing' }
+				});
 				return;
 			}
 			if (this.commands.length === 0) {
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_error', reason: 'no_commands' } });
+				window.parent.postMessage({
+					type: 'fab_status',
+					body: { event: 'print_error', reason: 'no_commands' }
+				});
 				return;
 			}
 			if (this.syncVizStream) {
@@ -491,7 +514,10 @@
 
 			if (this.serialResp.slice(-1) !== '\n') return;
 
-			const lines = this.serialResp.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+			const lines = this.serialResp
+				.split('\n')
+				.map((l) => l.trim())
+				.filter((l) => l.length > 0);
 			this.serialResp = '';
 
 			for (const line of lines) {
@@ -545,7 +571,7 @@
 					event: 'position',
 					x: parseFloat(this.reportedPos['X']),
 					y: parseFloat(this.reportedPos['Y']),
-					z: parseFloat(this.reportedPos['Z']),
+					z: parseFloat(this.reportedPos['Z'])
 				}
 			});
 		}
@@ -631,6 +657,10 @@
 		 * }
 		 */
 		render() {
+			if (this._needsCameraReInit) {
+				this.camera = createCamera();
+				this._needsCameraReInit = false;
+			}
 			if (this.coordinateSystem == 'delta') {
 				this.drawDeltaPrinter();
 			} else {
@@ -682,6 +712,8 @@
 
 			// Update camera position & orientation
 			if (this.recoverCameraPosition) {
+				// Reset upY in case orbitControl flipped it by crossing the north pole
+				this.camera.upY = 1;
 				this.camera.setPosition(
 					this.cameraPosition.x,
 					this.cameraPosition.y,
@@ -703,6 +735,52 @@
 			this.cameraOrientation.z = this.camera.centerZ;
 		}
 
+		/**
+		 * Snap the camera to an axis-aligned view.
+		 * @param {'home'|'top'|'front'|'side'} view
+		 */
+		setCameraView(view) {
+			const d = Math.max(this.maxX, this.maxY, this.maxZ) * 2;
+			// Horizontal scene center in world space (same for all views):
+			//   T3 brings bed center to origin, T2/R2/R3 are trivial there,
+			//   then S*R*T1 gives cx=0, cz=-maxY.
+			const cx = 0;
+			const cz = -this.maxY;
+			// Vertical centers differ by view:
+			//   cy_bed  = bed surface level (0.25*maxZ) — used for top view
+			//   cy_mid  = work-envelope midpoint (~-0.25*maxZ) — used for front/side
+			const cy_bed = 0.25 * this.maxZ;
+			const cy_mid = -0.25 * this.maxZ;
+
+			if (view === 'home') {
+				this.cameraOrientation.set(cx, cy_mid, cz);
+				this.cameraPosition.set(cx + d * 0.6, cy_mid - d * 0.5, cz + d * 0.6);
+			} else if (view === 'top') {
+				// Steep top-down view with slight +Z tilt so the look direction is never
+				// parallel to the default up vector (0,1,0), avoiding gimbal lock. ~81° elevation.
+				this.cameraOrientation.set(cx, cy_bed, cz);
+				this.cameraPosition.set(cx, cy_bed - d * 0.99, cz + d * 0.14);
+			} else if (view === 'front') {
+				this.cameraOrientation.set(cx, cy_mid, cz);
+				this.cameraPosition.set(cx, cy_mid, cz + d);
+			} else if (view === 'side') {
+				this.cameraOrientation.set(cx, cy_mid, cz);
+				this.cameraPosition.set(cx + d, cy_mid, cz);
+			} else if (view === 'back') {
+				this.cameraOrientation.set(cx, cy_mid, cz);
+				this.cameraPosition.set(cx, cy_mid, cz - d);
+			} else if (view === 'left') {
+				this.cameraOrientation.set(cx, cy_mid, cz);
+				this.cameraPosition.set(cx - d, cy_mid, cz);
+			} else if (view === 'bottom') {
+				this.cameraOrientation.set(cx, cy_bed, cz);
+				this.cameraPosition.set(cx, cy_bed + d * 0.99, cz + d * 0.14);
+			} else {
+				return;
+			}
+			this.recoverCameraPosition = true;
+		}
+
 		drawCartesianPrinter() {
 			orbitControl(2, 2, 0.1);
 
@@ -711,8 +789,8 @@
 			scale(-1, 1);
 			push();
 			translate(this.maxX / 2, 0, this.maxY / 2);
-			rotateY(PI / 12);
-			rotateX(PI / 12);
+			// rotateY(PI / 12);
+			// rotateX(PI / 12);
 			fill(254, 249, 152);
 			push();
 			translate(0, 2.5, 0);
@@ -1516,5 +1594,4 @@
 			fab.serial.write(e.data.body.gcode + '\n');
 		}
 	});
-
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,34 +1,223 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+		<script src="/p5.fab.js" type="text/javascript"></script>
+		<script src="https://unpkg.com/p5-webserial@0.1.1/build/p5.webserial.js"></script>
+	</head>
+	<style>
+		html,
+		body {
+			overflow: hidden;
+			margin: 0;
+			overscroll-behavior: none;
+			width: 100vw;
+			height: 100vh;
+		}
 
-<head>
-    <meta charset="UTF-8" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
-    <script src="/p5.fab.js" type="text/javascript"></script>
-    <script src="https://unpkg.com/p5-webserial@0.1.1/build/p5.webserial.js"></script>
-</head>
-<style>
-    html,
-    body {
-        overflow: hidden;
-        margin: 0;
-        overscroll-behavior: none;
-        width: 100vw;
-        height: 100vh;
-    }
-</style>
+		#nav-cube-wrap {
+			position: fixed;
+			top: 8px;
+			right: 8px;
+			display: grid;
+			grid-template-areas:
+				'.    up   .'
+				'left cube right'
+				'.    down .';
+			grid-template-columns: 20px 48px 20px;
+			grid-template-rows: 20px 48px 20px;
+			gap: 25px;
+			z-index: 10;
+		}
 
-<body>
-    <!-- <script src="../lib/midi.js" type="module"></script> -->
-    <script defer>
-        addEventListener(
-            "DOMContentLoaded",
-            (e) => {
-                window.parent.postMessage({ type: "ready", body: "" });
-            },
-            { once: true }
-        );
-    </script>
-</body>
+		#nav-cube-scene {
+			grid-area: cube;
+			perspective: 140px;
+			width: 48px;
+			height: 48px;
+		}
 
+		#nav-cube {
+			width: 48px;
+			height: 48px;
+			position: relative;
+			transform-style: preserve-3d;
+		}
+
+		.face {
+			position: absolute;
+			width: 48px;
+			height: 48px;
+			background: rgba(255, 255, 255, 0.82);
+			border: 1px solid rgba(0, 0, 0, 0.25);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-family: monospace;
+			font-size: 8px;
+			cursor: pointer;
+			user-select: none;
+			backface-visibility: hidden;
+		}
+
+		.face:hover {
+			background: rgba(180, 210, 255, 0.95);
+		}
+
+		.front {
+			transform: translateZ(24px);
+		}
+		.back {
+			transform: rotateY(180deg) translateZ(24px);
+		}
+		.right {
+			transform: rotateY(90deg) translateZ(24px);
+		}
+		.left {
+			transform: rotateY(-90deg) translateZ(24px);
+		}
+		.top {
+			transform: rotateX(90deg) translateZ(24px);
+		}
+		.bottom {
+			transform: rotateX(-90deg) translateZ(24px);
+		}
+
+		.nav-arrow {
+			font-size: 10px;
+			padding: 0;
+			background: none;
+			border: none;
+			cursor: pointer;
+			opacity: 0.6;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.nav-arrow:hover {
+			opacity: 1;
+		}
+
+		#arr-up {
+			grid-area: up;
+			align-self: end;
+		}
+		#arr-down {
+			grid-area: down;
+			align-self: start;
+		}
+		#arr-left {
+			grid-area: left;
+			justify-self: end;
+		}
+		#arr-right {
+			grid-area: right;
+			justify-self: start;
+		}
+	</style>
+
+	<body>
+		<div id="nav-cube-wrap">
+			<button class="nav-arrow" id="arr-up" onclick="rotateCamera(0, PI12)">▲</button>
+			<button class="nav-arrow" id="arr-left" onclick="rotateCamera(-PI12, 0)">◄</button>
+			<div id="nav-cube-scene">
+				<div id="nav-cube">
+					<div class="face front" onclick="window.fab?.setCameraView('front')">Front</div>
+					<div class="face back" onclick="window.fab?.setCameraView('back')">Back</div>
+					<div class="face top" onclick="window.fab?.setCameraView('top')">Top</div>
+					<div class="face bottom" onclick="window.fab?.setCameraView('bottom')">Bot</div>
+					<div class="face right" onclick="window.fab?.setCameraView('side')">Right</div>
+					<div class="face left" onclick="window.fab?.setCameraView('left')">Left</div>
+				</div>
+			</div>
+			<button class="nav-arrow" id="arr-right" onclick="rotateCamera(PI12, 0)">►</button>
+			<button class="nav-arrow" id="arr-down" onclick="rotateCamera(0, -PI12)">▼</button>
+		</div>
+
+		<script defer>
+			addEventListener(
+				'DOMContentLoaded',
+				(e) => {
+					window.parent.postMessage({ type: 'ready', body: '' });
+				},
+				{ once: true }
+			);
+
+			const PI12 = Math.PI / 12;
+
+			function updateNavCube() {
+				const cube = document.getElementById('nav-cube');
+				if (cube && window.fab && window.fab.camera) {
+					const cam = window.fab.camera;
+					const dx = cam.eyeX - cam.centerX;
+					const dy = cam.eyeY - cam.centerY;
+					const dz = cam.eyeZ - cam.centerZ;
+					const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+					if (len > 0) {
+						// V: unit vector from scene center toward camera.
+						// The cube face whose local normal equals V should face the CSS viewer.
+						const vx = dx / len, vy = dy / len, vz = dz / len;
+
+						// Use the camera's actual up vector so the cube stays consistent
+						// with p5's rendering (orbitControl sets upY=-1 when past the pole).
+						const ux = cam.upX || 0, uy = cam.upY ?? 1, uz = cam.upZ || 0;
+						let rx = uy * vz - uz * vy;
+						let ry = uz * vx - ux * vz;
+						let rz = ux * vy - uy * vx;
+						const rLen = Math.sqrt(rx * rx + ry * ry + rz * rz);
+						if (rLen < 0.001) {
+							// Up is nearly parallel to V; fall back to Z-axis
+							// cross((0,0,1), V) = (-vy, vx, 0)
+							rx = -vy; ry = vx; rz = 0;
+							const rLen2 = Math.sqrt(rx * rx + ry * ry);
+							if (rLen2 > 0) { rx /= rLen2; ry /= rLen2; }
+						} else {
+							rx /= rLen; ry /= rLen; rz /= rLen;
+						}
+
+						// Reorthogonalised up: cross(V, right)
+						const wx = vy * rz - vz * ry;
+						const wy = vz * rx - vx * rz;
+						const wz = vx * ry - vy * rx;
+
+						// Build the CSS matrix3d (column-major).
+						// R_applied = R_axes^T, where R_axes has columns [right, up, V].
+						// Columns of R_applied are the rows of R_axes:
+						//   col1 = (rx, wx, vx), col2 = (ry, wy, vy), col3 = (rz, wz, vz)
+						cube.style.transform =
+							`matrix3d(${rx},${wx},${vx},0, ${ry},${wy},${vy},0, ${rz},${wz},${vz},0, 0,0,0,1)`;
+					}
+				}
+				requestAnimationFrame(updateNavCube);
+			}
+			requestAnimationFrame(updateNavCube);
+
+			function rotateCamera(deltaAz, deltaEl) {
+				if (!window.fab || !window.fab.camera) return;
+				const cam = window.fab.camera;
+				const cx = window.fab.cameraOrientation.x;
+				const cy = window.fab.cameraOrientation.y;
+				const cz = window.fab.cameraOrientation.z;
+
+				const dx = cam.eyeX - cx;
+				const dy = cam.eyeY - cy;
+				const dz = cam.eyeZ - cz;
+				const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+				const dH = Math.sqrt(dx * dx + dz * dz);
+
+				let az = Math.atan2(dx, dz) + deltaAz;
+				let el = Math.atan2(-dy, dH) + deltaEl;
+				el = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, el));
+
+				window.fab.cameraPosition.set(
+					cx + r * Math.sin(az) * Math.cos(el),
+					cy - r * Math.sin(el),
+					cz + r * Math.cos(az) * Math.cos(el)
+				);
+				window.fab.recoverCameraPosition = true;
+			}
+		</script>
+	</body>
 </html>

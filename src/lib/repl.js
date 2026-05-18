@@ -12,6 +12,14 @@ export function evalCode(code) {
   }
 }
 
+export function normalizeCode(code) {
+  return code
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function evalSketch(sketchCode) {
   try {
     editorState.output = []; // clear output
@@ -49,6 +57,7 @@ export function evalSketch(sketchCode) {
   }
 
   flashCode(editorState.editorView);
+  editorState.lastRunCode = normalizeCode(sketchCode);
 }
 
 function injectTryCatch(sketchCode) {

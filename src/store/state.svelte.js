@@ -39,6 +39,8 @@ export const editorState = $state({
         z: null,
     },
     printAlert: null,
+    lastRunCode: null,
+    staleCodeModal: false,
 })
 
 export const authHandlers = {

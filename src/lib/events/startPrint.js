@@ -1,9 +1,14 @@
-import { evalCode } from "$lib/repl";
-
-// TODO: Camera
-// import { recordCamera } from "./connectToCamera";
+import { evalCode, normalizeCode } from "$lib/repl";
+import { editorState } from "../../store/state.svelte.js";
 
 export function startPrint() {
+    if (
+        !editorState.machineStatus.isPrinting &&
+        editorState.lastRunCode !== null &&
+        normalizeCode(editorState.globalSketch) !== editorState.lastRunCode
+    ) {
+        editorState.staleCodeModal = true;
+        return;
+    }
     evalCode(`fab.print()`);
-    // recordCamera();
 }

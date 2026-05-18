@@ -1,7 +1,7 @@
 <script>
 	import { onMount, tick } from 'svelte';
 	import { editorState, store } from '../../../store/state.svelte.js';
-	import { evalSketch } from '$lib/repl';
+	import { evalSketch, evalCode } from '$lib/repl';
 	import { db, storage } from '../../../dbConfig';
 	import { getDoc, doc, setDoc, updateDoc } from 'firebase/firestore';
 	import { getPostFromDB } from '$lib/dbLoadSave.js';
@@ -72,6 +72,17 @@
 		});
 	});
 
+	function runAndPrint() {
+		editorState.staleCodeModal = false;
+		evalSketch(editorState.globalSketch);
+		evalCode('fab.print()');
+	}
+
+	function printAnyway() {
+		editorState.staleCodeModal = false;
+		evalCode('fab.print()');
+	}
+
 	function handleIframeLoad() {
 		console.log('iframe loaded');
 		const sketchWindow = document.getElementById('preview');
@@ -102,6 +113,19 @@
 
 		{#if editorState.displayRemixPane}
 			<RemixPane />
+		{/if}
+
+		{#if editorState.staleCodeModal}
+			<div class="alert-overlay">
+				<div class="alert-modal">
+					<p>Your sketch has changed since the last run. Print using the latest code, or continue with commands from the previous run.</p>
+					<div class="modal-buttons">
+						<button onclick={runAndPrint}>Run & Print</button>
+						<button onclick={printAnyway}>Print Anyway</button>
+						<button onclick={() => (editorState.staleCodeModal = false)}>Cancel</button>
+					</div>
+				</div>
+			</div>
 		{/if}
 
 		{#if editorState.printAlert}
@@ -178,7 +202,7 @@
 		border: 1px solid black;
 		box-shadow: 7px 7px var(--ma-orange);
 		padding: 2em;
-		max-width: 360px;
+		max-width: 480px;
 		text-align: left;
 		font-family: 'Inter', sans-serif;
 	}
@@ -192,5 +216,11 @@
 	.alert-modal button {
 		display: block;
 		margin: 0 auto;
+	}
+
+	.modal-buttons {
+		display: flex;
+		justify-content: center;
+		gap: 0.75rem;
 	}
 </style>
