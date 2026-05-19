@@ -491,3 +491,7 @@ button:disabled:hover {
 .flash-code-on {
     background-color: var(--ma-orange);
 }
+
+.error-line-highlight {
+    background-color: rgba(220, 50, 50, 0.25);
+}

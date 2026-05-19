@@ -40,8 +40,8 @@
 			_fab._needsCameraReInit = true;
 			_fab.recoverCameraPosition = true;
 		}
-		global.fab = _fab;
-		return _fab;
+		global.fab = new Proxy(_fab, fabValidationHandler);
+		return global.fab;
 	};
 
 	p5.prototype.getSerial = function () {
@@ -98,7 +98,7 @@
 				'p5.fab: fab = createFab() was not called in setup(). Creating fab automatically.'
 			);
 			_fab = new Fab();
-			global.fab = _fab;
+			global.fab = new Proxy(_fab, fabValidationHandler);
 		} else {
 			// Re-run: createCanvas() in setup() replaced the p5 renderer, making
 			// _fab.camera stale. Defer camera recreation to the first render() call
@@ -248,6 +248,64 @@
 		maxY: 220,
 		maxZ: 250,
 		autoConnect: true
+	};
+
+	const FAB_PARAM_NAMES = Object.freeze({
+		// Drawing — v optional (printer uses last speed)
+		circle:      ['x', 'y', 'z', 'd'],
+		// Absolute movement — v optional
+		moveTo:      ['x', 'y', 'z'],
+		travelTo:    ['x', 'y', 'z'],
+		moveToX:     ['x'],
+		moveToY:     ['y'],
+		moveToZ:     ['z'],
+		// Relative movement — v optional
+		move:        ['dx', 'dy', 'dz'],
+		moveX:       ['dx'],
+		moveY:       ['dy'],
+		moveZ:       ['dz'],
+		// Absolute extrusion — e auto-calculated, v optional
+		moveExtrude: ['x', 'y', 'z'],
+		moveRetract: ['x', 'y', 'z'],
+		extrudeToXY: ['x', 'y'],
+		// Relative extrusion — e auto-calculated, v optional
+		extrudeX:    ['dx'],
+		extrudeXY:   ['dx', 'dy'],
+		extrudeY:    ['dy'],
+		extrudeZ:    ['dz'],
+		// Config — these are the whole point of the call
+		setTemps:    ['tNozzle', 'tBed'],
+		setSpeed:    ['v'],
+	});
+
+	const fabValidationHandler = {
+		get(target, prop) {
+			const val = target[prop];
+			if (typeof val !== 'function' || !FAB_PARAM_NAMES[prop]) return val;
+			return function (...args) {
+				const names = FAB_PARAM_NAMES[prop];
+				const src = val.toString();
+				const paramStr = src.slice(src.indexOf('(') + 1, src.indexOf(')'));
+				const maxParams = paramStr.trim() ? paramStr.split(',').length : 0;
+				const received = args.length;
+				const word = received === 1 ? 'argument' : 'arguments';
+				if (received < names.length) {
+					window.parent.postMessage({
+						type: 'output',
+						body: `p5.fab says: ${prop}() received ${received} ${word}, expected at least ${names.length}.`
+					});
+					return;
+				}
+				if (maxParams > 0 && received > maxParams) {
+					window.parent.postMessage({
+						type: 'output',
+						body: `p5.fab says: ${prop}() received ${received} ${word}, expected no more than ${maxParams}.`
+					});
+					return;
+				}
+				return val.apply(target, args);
+			};
+		}
 	};
 
 	class Fab {

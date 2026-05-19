@@ -1,5 +1,6 @@
 <script>
-	import { onMount, tick } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { beforeNavigate } from '$app/navigation';
 	import { editorState, store } from '../../../store/state.svelte.js';
 	import { evalSketch, evalCode } from '$lib/repl';
 	import { db, storage } from '../../../dbConfig';
@@ -60,16 +61,39 @@
 		console.log('loading sketch data done');
 	}
 
+	beforeNavigate(({ cancel }) => {
+		if (!editorState.saved) {
+			const confirmed = confirm(
+				"This page is asking you to confirm that you want to leave — information you've entered may not be saved."
+			);
+			if (!confirmed) cancel();
+		}
+	});
+
+	function handleBeforeUnload(e) {
+		if (!editorState.saved) {
+			e.preventDefault();
+		}
+	}
+
 	onMount(async () => {
+		window.addEventListener('beforeunload', handleBeforeUnload);
 		editorState.p5Initialized = false;
 		initIframe = true;
 		await fetchSketchData();
+		editorState.saved = true;
 		await tick();
 		Split(['#left', '#right'], {});
 		Split(['#left-top', '#left-bottom'], {
 			direction: 'vertical',
 			sizes: [80, 20]
 		});
+	});
+
+	onDestroy(() => {
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('beforeunload', handleBeforeUnload);
+		}
 	});
 
 	function runAndPrint() {

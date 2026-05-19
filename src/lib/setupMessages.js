@@ -1,5 +1,6 @@
 import { editorState } from '../store/state.svelte.js';
 import { setOutput } from '$lib/repl.js';
+import { highlightErrorLine } from '$lib/errorHighlight.js';
 
 export function setupMessages() {
     // Setup messages with iframe
@@ -16,7 +17,7 @@ export function setupMessages() {
             fab_status: messageFabStatus,
         };
         if (messageSwitch[message.type]) {
-            messageSwitch[message.type](message.body);
+            messageSwitch[message.type](message.body, message.line);
         }
     });
 
@@ -49,9 +50,12 @@ export function setupMessages() {
         console.log(messageBody);
     }
 
-    function messageError(messageBody) {
+    function messageError(messageBody, line) {
         console.debug('messageError:', messageBody);
         setOutput(false, [{ type: 'error', body: messageBody }]);
+        if (line && editorState.editorView) {
+            highlightErrorLine(editorState.editorView, line);
+        }
     }
 
     function messageOutput(messageBody) {
@@ -59,6 +63,11 @@ export function setupMessages() {
         // TODO: Better way of detecting P5 friendly errors
         console.debug(messageBody);
         messageBody = messageBody.toString();
+
+        if (messageBody.includes('p5.fab says:')) {
+            setOutput(false, [{ type: 'warn', body: messageBody }]);
+            return;
+        }
 
         if (messageBody.includes('p5.js says:')) {
             setOutput(false, [{ type: 'p5', body: messageBody }]);

@@ -3,6 +3,7 @@
 	import { editorState } from '../store/state.svelte.js';
 	import { templateSketch } from '$lib/examples/examples';
 	import { evalSketch } from '$lib/repl.js';
+	import { clearErrorHighlight } from '$lib/errorHighlight.js';
 	import { setupMessages } from '$lib/setupMessages.js';
 	import { keymap } from '@codemirror/view';
 	import { javascript } from '@codemirror/lang-javascript';
@@ -29,7 +30,16 @@
 				preventDefault: true,
 				shift: indentLess,
 				run: (e) => {
-					if (!completionStatus(e.state)) return indentMore(e);
+					if (!completionStatus(e.state)) {
+						const sel = e.state.selection.main;
+						const isMultiLine =
+							e.state.doc.lineAt(sel.from).number !== e.state.doc.lineAt(sel.to).number;
+						const isAtLineStart =
+							sel.empty && sel.from === e.state.doc.lineAt(sel.from).from;
+						if (isMultiLine || isAtLineStart) return indentMore(e);
+						e.dispatch(e.state.replaceSelection('\t'));
+						return true;
+					}
 					return acceptCompletion(e);
 				}
 			}
@@ -39,6 +49,7 @@
 	const customExtensions = [keybindings];
 
 	function onEditorChange() {
+		clearErrorHighlight(editorState.editorView);
 		if (editorState.saved) {
 			editorState.saved = false;
 			const saveButton = document.getElementById('sketchSaveBtn');

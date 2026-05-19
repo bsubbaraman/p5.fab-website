@@ -158,11 +158,15 @@
 					if (len > 0) {
 						// V: unit vector from scene center toward camera.
 						// The cube face whose local normal equals V should face the CSS viewer.
-						const vx = dx / len, vy = dy / len, vz = dz / len;
+						const vx = dx / len,
+							vy = dy / len,
+							vz = dz / len;
 
 						// Use the camera's actual up vector so the cube stays consistent
 						// with p5's rendering (orbitControl sets upY=-1 when past the pole).
-						const ux = cam.upX || 0, uy = cam.upY ?? 1, uz = cam.upZ || 0;
+						const ux = cam.upX || 0,
+							uy = cam.upY ?? 1,
+							uz = cam.upZ || 0;
 						let rx = uy * vz - uz * vy;
 						let ry = uz * vx - ux * vz;
 						let rz = ux * vy - uy * vx;
@@ -170,11 +174,18 @@
 						if (rLen < 0.001) {
 							// Up is nearly parallel to V; fall back to Z-axis
 							// cross((0,0,1), V) = (-vy, vx, 0)
-							rx = -vy; ry = vx; rz = 0;
+							rx = -vy;
+							ry = vx;
+							rz = 0;
 							const rLen2 = Math.sqrt(rx * rx + ry * ry);
-							if (rLen2 > 0) { rx /= rLen2; ry /= rLen2; }
+							if (rLen2 > 0) {
+								rx /= rLen2;
+								ry /= rLen2;
+							}
 						} else {
-							rx /= rLen; ry /= rLen; rz /= rLen;
+							rx /= rLen;
+							ry /= rLen;
+							rz /= rLen;
 						}
 
 						// Reorthogonalised up: cross(V, right)
@@ -186,8 +197,7 @@
 						// R_applied = R_axes^T, where R_axes has columns [right, up, V].
 						// Columns of R_applied are the rows of R_axes:
 						//   col1 = (rx, wx, vx), col2 = (ry, wy, vy), col3 = (rz, wz, vz)
-						cube.style.transform =
-							`matrix3d(${rx},${wx},${vx},0, ${ry},${wy},${vy},0, ${rz},${wz},${vz},0, 0,0,0,1)`;
+						cube.style.transform = `matrix3d(${rx},${wx},${vx},0, ${ry},${wy},${vy},0, ${rz},${wz},${vz},0, 0,0,0,1)`;
 					}
 				}
 				requestAnimationFrame(updateNavCube);

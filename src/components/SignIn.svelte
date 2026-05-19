@@ -34,8 +34,8 @@
 		<label>
 			<input bind:value={password} class="input" type="password" placeholder="password" />
 		</label>
-		<button onclick={signIn} type="submit" class="sign-in">Sign In</button>
-		<button onclick={signUp} type="submit" class="sign-up">Sign Up</button>
+		<button onclick={signIn} type="button" class="sign-in">Sign In</button>
+		<button onclick={signUp} type="button" class="sign-up">Sign Up</button>
 	</form>
 </div>
 

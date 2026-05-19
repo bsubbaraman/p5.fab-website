@@ -93,7 +93,7 @@
 		<label>
 			<input bind:value={password} class="input" type="password" placeholder="password" />
 		</label>
-		<button onclick={signUp} type="submit" class="sign-up" disabled={disableSignUp}>Sign Up</button>
+		<button onclick={signUp} type="button" class="sign-up" disabled={disableSignUp}>Sign Up</button>
 	</form>
 </div>
 
