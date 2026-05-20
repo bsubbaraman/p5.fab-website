@@ -16,6 +16,8 @@ export function setupMessages() {
             debug: messageDebug,
             fab_status: messageFabStatus,
             fab_config: messageFabConfig,
+            parsing_start: messageParsingStart,
+            parsing_complete: messageParsingComplete,
         };
         if (messageSwitch[message.type]) {
             messageSwitch[message.type](message.body, message.line);
@@ -23,6 +25,14 @@ export function setupMessages() {
     });
 
     function messageReady(_) { }
+
+    function messageParsingStart() {
+        editorState.isParsing = true;
+    }
+
+    function messageParsingComplete() {
+        editorState.isParsing = false;
+    }
 
     function messageFabConfig(body) {
         if (body.property) {

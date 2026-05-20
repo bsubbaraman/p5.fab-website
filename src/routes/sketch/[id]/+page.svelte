@@ -96,12 +96,6 @@
 		}
 	});
 
-	function runAndPrint() {
-		editorState.staleCodeModal = false;
-		evalSketch(editorState.globalSketch);
-		evalCode('fab.print()');
-	}
-
 	function printAnyway() {
 		editorState.staleCodeModal = false;
 		evalCode('fab.print()');
@@ -142,9 +136,11 @@
 		{#if editorState.staleCodeModal}
 			<div class="alert-overlay">
 				<div class="alert-modal">
-					<p>Your sketch has changed since the last run. Print using the latest code, or continue with commands from the previous run.</p>
+					<p>
+						Your sketch has changed since the last run. Continue printing with commands from the
+						previous run?
+					</p>
 					<div class="modal-buttons">
-						<button onclick={runAndPrint}>Run & Print</button>
 						<button onclick={printAnyway}>Print Anyway</button>
 						<button onclick={() => (editorState.staleCodeModal = false)}>Cancel</button>
 					</div>
@@ -175,8 +171,18 @@
 
 			<div id="right">
 				<div id="right-top">
+					{#if editorState.isParsing}
+						<div class="parsing-badge">Building viz...</div>
+					{/if}
 					{#if initIframe}
-						<iframe title="fab" onload={handleIframeLoad} id="preview" src="/preview.html" sandbox="allow-scripts allow-same-origin allow-downloads"></iframe>
+						<iframe
+							title="fab"
+							onload={handleIframeLoad}
+							id="preview"
+							src="/preview.html"
+							sandbox="allow-scripts allow-downloads"
+							allow="serial"
+						></iframe>
 					{/if}
 				</div>
 				<div id="right-bottom">
@@ -188,11 +194,28 @@
 </main>
 
 <style>
+	#right-top {
+		position: relative;
+	}
+
 	iframe {
 		width: 100%;
 		height: 100%;
 		border: 0;
 		display: block;
+	}
+
+	.parsing-badge {
+		position: absolute;
+		top: 0.5rem;
+		left: 0.5rem;
+		z-index: 10;
+		background: white;
+		border: 1px solid black;
+		padding: 0.15rem 0.5rem;
+		font-family: var(--font-mono, monospace);
+		font-size: 0.75rem;
+		pointer-events: none;
 	}
 
 	main {

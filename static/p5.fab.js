@@ -5,6 +5,7 @@
 (function (global) {
 	let _fab;
 	let _once = false;
+	let _savedShapesCounter = 0;
 
 	const moveCommands = ['G0', 'G1', 'G2', 'G3'];
 
@@ -35,10 +36,7 @@
 		if (!_fab) {
 			_fab = new Fab();
 		} else {
-			// Defer camera re-init to the first draw() frame so it runs after
-			// createCanvas(), which creates a new renderer and resets _curCamera.
-			_fab._needsCameraReInit = true;
-			_fab.recoverCameraPosition = true;
+			// Camera flags are set by the createCanvas override in repl.js only when needed.
 		}
 		global.fab = new Proxy(_fab, fabValidationHandler);
 		return global.fab;
@@ -68,10 +66,10 @@
 
 		// Patch and return geometry
 		let g = this.immediateMode.geometry;
-		this._savedShapesCount = this._savedShapesCount + 1 || 0;
+		_savedShapesCounter++;
 
 		// Assign gid to cache buffer
-		g.gid = 'saved|' + this._savedShapesCount;
+		g.gid = 'saved|' + _savedShapesCounter;
 
 		// Shadow this function to avoid losing edges when `model(...)` is called
 		g._makeTriangleEdges = function () {
@@ -100,20 +98,21 @@
 			_fab = new Fab();
 			global.fab = new Proxy(_fab, fabValidationHandler);
 		} else {
-			// Re-run: createCanvas() in setup() replaced the p5 renderer, making
-			// _fab.camera stale. Defer camera recreation to the first render() call
-			// so it attaches to the current renderer (after all setup code has run).
-			_fab._needsCameraReInit = true;
-			_fab.recoverCameraPosition = true;
+			// Re-run: camera flags are set by the createCanvas override in repl.js
+			// only when the canvas is actually recreated. Nothing to do here.
 		}
 		if (typeof fabDraw === 'function') {
 			_fab.lastAsyncPosition = new XYZEFC();
 			_fab.plannedPosition = new XYZEFC();
-			_fab.model = '';
-			_fab.commands = [];
-			fabDraw();
-			_fab.parseGcode();
-			_fab.syncVizStream = true;
+			setTimeout(() => {
+				window.parent.postMessage({ type: 'parsing_start' }, '*');
+				setTimeout(() => {
+					_fab.commands = [];
+					fabDraw();
+					_fab.parseGcodeAsync();
+					_fab.syncVizStream = true;
+				}, 0);
+			}, 350);
 		}
 	};
 
@@ -293,14 +292,14 @@
 					window.parent.postMessage({
 						type: 'output',
 						body: `p5.fab says: ${prop}() received ${received} ${word}, expected at least ${names.length}.`
-					});
+					}, '*');
 					return;
 				}
 				if (maxParams > 0 && received > maxParams) {
 					window.parent.postMessage({
 						type: 'output',
 						body: `p5.fab says: ${prop}() received ${received} ${word}, expected no more than ${maxParams}.`
-					});
+					}, '*');
 					return;
 				}
 				return val.apply(target, args);
@@ -328,6 +327,8 @@
 			// Rendering info
 			this.vertices = [];
 			this.model = '';
+			this._parseGeneration = 0;
+			this._parsingGcode = false;
 			this.camera = createCamera();
 			this.camera.setPosition(0, 0, 400);
 			this.cameraPosition = new p5.Vector(0, 0, 400);
@@ -368,7 +369,7 @@
 				filamentDiameter: this._filamentDiameter
 			};
 			console.debug('FAB_CONFIG', messageData);
-			window.parent.postMessage({ type: 'fab_config', body: messageData });
+			window.parent.postMessage({ type: 'fab_config', body: messageData }, '*');
 			if (this.cameraPosition) {
 				this.setCameraView('home');
 			}
@@ -381,7 +382,7 @@
 				value: this._nozzleDiameter
 			};
 			console.debug('FAB_CONFIG_CHANGE', messageData);
-			window.parent.postMessage({ type: 'fab_config', body: messageData });
+			window.parent.postMessage({ type: 'fab_config', body: messageData }, '*');
 		}
 
 		set filamentDiameter(d) {
@@ -391,14 +392,14 @@
 				value: this._filamentDiameter
 			};
 			console.debug('FAB_CONFIG_CHANGE', messageData);
-			window.parent.postMessage({ type: 'fab_config', body: messageData });
+			window.parent.postMessage({ type: 'fab_config', body: messageData }, '*');
 		}
 
 		set maxX(v) {
 			this._maxX = v;
 			this.centerX = v / 2;
 			console.debug('FAB_CONFIG_CHANGE', { property: 'maxX', value: v });
-			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxX', value: v } });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxX', value: v } }, '*');
 		}
 		get maxX() {
 			return this._maxX;
@@ -408,7 +409,7 @@
 			this._maxY = v;
 			this.centerY = v / 2;
 			console.debug('FAB_CONFIG_CHANGE', { property: 'maxY', value: v });
-			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxY', value: v } });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxY', value: v } }, '*');
 		}
 		get maxY() {
 			return this._maxY;
@@ -417,7 +418,7 @@
 		set maxZ(v) {
 			this._maxZ = v;
 			console.debug('FAB_CONFIG_CHANGE', { property: 'maxZ', value: v });
-			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxZ', value: v } });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxZ', value: v } }, '*');
 		}
 		get maxZ() {
 			return this._maxZ;
@@ -437,11 +438,11 @@
 			const preset = printerPresets[name];
 			if (!preset) {
 				const available = Object.keys(printerPresets).join(', ') || 'none loaded yet';
-				window.parent.postMessage({ type: 'output', body: `p5.fab says: unknown printer preset "${name}". Available: ${available}` });
+				window.parent.postMessage({ type: 'output', body: `p5.fab says: unknown printer preset "${name}". Available: ${available}` }, '*');
 				return;
 			}
 			this.configure({ ...defaultPrinterSettings, ...preset, ...overrides });
-			window.parent.postMessage({ type: 'fab_config', body: { property: 'printerName', value: name } });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'printerName', value: name } }, '*');
 		}
 
 		setupSerialConnection() {
@@ -466,7 +467,7 @@
 				window.parent.postMessage({
 					type: 'fab_status',
 					body: { event: 'connection', connected: true }
-				});
+				}, '*');
 				_fab.serial.write('M114\n');
 				_fab.tempQueryIntervalID = setInterval(() => {
 					if (!_fab.isPrinting) {
@@ -481,7 +482,7 @@
 				window.parent.postMessage({
 					type: 'fab_status',
 					body: { event: 'connection', connected: false }
-				});
+				}, '*');
 				clearInterval(_fab.tempQueryIntervalID);
 				_fab.tempQueryIntervalID = null;
 			});
@@ -502,14 +503,14 @@
 				window.parent.postMessage({
 					type: 'fab_status',
 					body: { event: 'print_error', reason: 'already_printing' }
-				});
+				}, '*');
 				return;
 			}
 			if (this.commands.length === 0) {
 				window.parent.postMessage({
 					type: 'fab_status',
 					body: { event: 'print_error', reason: 'no_commands' }
-				});
+				}, '*');
 				return;
 			}
 			if (this.syncVizStream) {
@@ -519,14 +520,14 @@
 
 			if (this.commandStream.length > 0) {
 				this.isPrinting = true;
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_start' } });
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_start' } }, '*');
 				const cmd = this.commandStream[0];
 				this.serial.write(cmd + '\n');
 				this._postPositionFromCmd(cmd);
 				this.commandStream.shift();
 			} else {
 				this.isPrinting = false;
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } });
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			}
 		}
 
@@ -540,7 +541,7 @@
 				this.commandStream.shift();
 			} else {
 				this.isPrinting = false;
-				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } });
+				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			}
 		}
 
@@ -570,7 +571,7 @@
 			if (yMatch) body.y = parseFloat(yMatch[1]);
 			if (zMatch) body.z = parseFloat(zMatch[1]);
 			if (xMatch || yMatch || zMatch) {
-				window.parent.postMessage({ type: 'fab_status', body });
+				window.parent.postMessage({ type: 'fab_status', body }, '*');
 			}
 		}
 
@@ -601,7 +602,7 @@
 					if (nozzleMatch) tempBody.nozzle = parseFloat(nozzleMatch[1]);
 					if (bedMatch) tempBody.bed = parseFloat(bedMatch[1]);
 					if (nozzleMatch || bedMatch) {
-						window.parent.postMessage({ type: 'fab_status', body: { event: 'temp', ...tempBody } });
+						window.parent.postMessage({ type: 'fab_status', body: { event: 'temp', ...tempBody } }, '*');
 					}
 				}
 			}
@@ -638,7 +639,7 @@
 					y: parseFloat(this.reportedPos['Y']),
 					z: parseFloat(this.reportedPos['Z'])
 				}
-			});
+			}, '*');
 		}
 
 		parseGcode() {
@@ -713,6 +714,60 @@
 			});
 		}
 
+		async parseGcodeAsync() {
+			const generation = ++this._parseGeneration;
+			this._parsingGcode = true;
+			window.parent.postMessage({ type: 'parsing_start' }, '*');
+
+			const commands = this.commands.slice();
+			const vertices = [];
+			const CHUNK = 1000;
+
+			for (let i = 0; i < commands.length; i += CHUNK) {
+				if (this._parseGeneration !== generation) return;
+
+				const end = Math.min(i + CHUNK, commands.length);
+				for (let j = i; j < end; j++) {
+					let fullcommand = commands[j];
+					let cmd = fullcommand.trim().split(' ');
+					const code = cmd[0].substring(0, 2);
+					if (code !== 'G0' && code !== 'G1') continue;
+
+					let newV = new p5.Vector();
+					let vertexData = { command: code, vertex: newV, full: fullcommand };
+					let skip = false;
+
+					cmd.forEach((c) => {
+						const val = c.substring(1);
+						switch (c.charAt(0)) {
+							case 'X': newV.x = val; break;
+							case 'Y': newV.z = val; break;
+							case 'Z': newV.y = -1 * val; break;
+							case 'E':
+								if (val < 0) { newV = null; skip = true; }
+								break;
+							case ';':
+								if (val == 'prime' || val == 'present') { newV = null; skip = true; }
+								break;
+						}
+					});
+
+					if (newV && !skip) vertices.push(vertexData);
+				}
+
+				if (end < commands.length) {
+					await new Promise(r => requestAnimationFrame(r));
+				}
+			}
+
+			if (this._parseGeneration !== generation) return;
+
+			this.vertices = vertices;
+			this.model = null;
+			this._parsingGcode = false;
+			window.parent.postMessage({ type: 'parsing_complete' }, '*');
+		}
+
 		/**
 		 * Render a 3D preview of the planned toolpath. Call this inside a WEBGL p5.js `draw()` loop.
 		 * @example
@@ -732,33 +787,23 @@
 				this.drawCartesianPrinter();
 			}
 
-			// if (this.vertices.length == 0) {
-			//   this.updateCameraPosition();
-			//   return
-			// };
-			if (!this.model) {
-				// Tracks current toolpath position
-				// Assumes you're homed to start
-				// TODO: Incorporate initial position?
+			if (this._parsingGcode) {
+				if (this.model) model(this.model);
+			} else if (!this.model) {
 				var toolpathPos = new p5.Vector(0, 0, 0);
 				beginShape(LINES);
 				for (let v in this.vertices) {
 					v = parseInt(v);
 					var vertexData = this.vertices[v];
 					if (vertexData.command == 'G0') {
-						// Update toolpath position
-						// stroke(0,0,255);
-						// vertex(toolpathPos.x, toolpathPos.y, toolpathPos.z);
-						// vertex(vertexData.vertex.x, vertexData.vertex.y, vertexData.vertex.z);
 						toolpathPos = toolpathPos.set([
 							vertexData.vertex.x,
 							vertexData.vertex.y,
 							vertexData.vertex.z
 						]);
-						continue; // no extrusions on G0
+						continue;
 					} else if (vertexData.command == 'G1') {
 						stroke(0);
-						// Draw a line between current toolpath position and next toolpath position
 						vertex(toolpathPos.x, toolpathPos.y, toolpathPos.z);
 						vertex(vertexData.vertex.x, vertexData.vertex.y, vertexData.vertex.z);
 						toolpathPos = toolpathPos.set([

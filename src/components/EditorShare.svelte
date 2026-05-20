@@ -6,6 +6,7 @@
 	import { getDoc, doc, collection, addDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 	import Editor from './Editor.svelte';
+	import { requestIframeScreenshot } from '$lib/screenshot.js';
 
 	const MAX_FILES = 5;
 	const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
@@ -100,13 +101,11 @@
 			} else {
 				// Take a compressed JPEG screenshot for the thumbnail
 				const iframe = document.getElementById('preview');
-				const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-				const canvas = iframeDoc.querySelector('canvas');
-				if (!canvas) {
+				const dataURL = await requestIframeScreenshot(iframe);
+				if (!dataURL) {
 					console.warn('Canvas not found in iframe.');
 					return;
 				}
-				const dataURL = canvas.toDataURL('image/jpeg', 0.8);
 				try {
 					const storageRef = ref(storage, objectID + '/' + Date.now());
 					await uploadString(storageRef, dataURL, 'data_url');

@@ -6,7 +6,7 @@ import { highlightErrorLine, clearErrorHighlight } from "$lib/errorHighlight.js"
 
 export function evalCode(code) {
   try {
-    editorState.sketchWindow.contentWindow.eval(code);
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code }, '*');
   }
   catch (error) {
     console.error(error);
@@ -21,7 +21,7 @@ export function normalizeCode(code) {
     .trim();
 }
 
-export function evalSketch(sketchCode) {
+export async function evalSketch(sketchCode) {
   try {
     editorState.output = [];
     clearErrorHighlight(editorState.editorView);
@@ -41,7 +41,14 @@ export function evalSketch(sketchCode) {
     const isFirstRun = !editorState.p5Initialized;
     const codeToEval = injectTryCatch(sketchCode, prefixLines);
 
-    editorState.sketchWindow.contentWindow.eval(
+    // Flash and record BEFORE blocking work so the user sees feedback immediately
+    flashCode(editorState.editorView);
+    editorState.lastRunCode = normalizeCode(sketchCode);
+
+    // Yield to the browser so it can repaint the flash before the thread gets busy
+    await new Promise(r => setTimeout(r, 0));
+
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code:
       evalPrefix +
       codeToEval +
       `\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }); };` +
@@ -49,20 +56,43 @@ export function evalSketch(sketchCode) {
       `\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }); };` +
       `\n      try { window.windowResized = windowResized } catch (e) { console.log("no resize") };` +
       `\n    }\n  })()()`
-    );
+    }, '*');
 
     checkp5Init();
 
     if (!isFirstRun) {
-      editorState.sketchWindow.contentWindow.eval(`setup()`);
-      editorState.sketchWindow.contentWindow.eval(`reloadSketch()`);
+      // Wrap setup() so createCanvas() is a no-op when dimensions haven't changed.
+      // This prevents the canvas from going blank between runs, keeping the work
+      // envelope visible. If dimensions change, the original createCanvas is allowed.
+      editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code:
+        `(() => {
+            const _orig = p5.prototype.createCanvas;
+            let _canvasResized = false;
+            p5.prototype.createCanvas = function(w, h, renderer) {
+                if (w === width && h === height) return this._renderer;
+                _canvasResized = true;
+                return _orig.call(this, w, h, renderer);
+            };
+            const savedPos = (typeof fab !== 'undefined' && fab) ? {x: fab.cameraPosition.x, y: fab.cameraPosition.y, z: fab.cameraPosition.z} : null;
+            const savedOrientation = (typeof fab !== 'undefined' && fab) ? {x: fab.cameraOrientation.x, y: fab.cameraOrientation.y, z: fab.cameraOrientation.z} : null;
+            try { setup(); } finally {
+                p5.prototype.createCanvas = _orig;
+                if (typeof fab !== 'undefined' && fab) {
+                    fab._needsCameraReInit = true;
+                    if (!_canvasResized && savedPos) {
+                        fab.cameraPosition.set(savedPos.x, savedPos.y, savedPos.z);
+                        fab.cameraOrientation.set(savedOrientation.x, savedOrientation.y, savedOrientation.z);
+                        fab.recoverCameraPosition = true;
+                    }
+                }
+            }
+        })()`
+      }, '*');
+      editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `reloadSketch()` }, '*');
     }
   } catch (e) {
     setOutput(false, [{ type: "error", body: e.toString() }]);
   }
-
-  flashCode(editorState.editorView);
-  editorState.lastRunCode = normalizeCode(sketchCode);
 }
 
 function injectTryCatch(sketchCode, prefixLines) {
@@ -116,8 +146,8 @@ function injectTryCatch(sketchCode, prefixLines) {
 
 function checkp5Init() {
   if (!editorState.p5Initialized) {
-    editorState.sketchWindow.contentWindow.eval(`try { remove() } catch (e) { window.parent.postMessage({ type: "debug", body: "remove() failed"}); }`)
-    editorState.sketchWindow.contentWindow.eval(`new p5()`);
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `try { remove() } catch (e) { window.parent.postMessage({ type: "debug", body: "remove() failed"}); }` }, '*');
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `new p5()` }, '*');
     editorState.p5Initialized = true;
   }
 }

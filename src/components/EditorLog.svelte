@@ -5,6 +5,7 @@
 	import { getDoc, doc, collection, addDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 	import Editor from './Editor.svelte';
+	import { requestIframeScreenshot } from '$lib/screenshot.js';
 
 	let changeLog = $state('');
 	let files;
@@ -54,13 +55,11 @@
 			} else {
 				// if no files were uploaded, take a screenshot for the thumbnail
 				const iframe = document.getElementById('preview');
-				const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-				const canvas = iframeDoc.querySelector('canvas');
-				if (!canvas) {
+				const dataURL = await requestIframeScreenshot(iframe);
+				if (!dataURL) {
 					console.warn('Canvas not found in iframe.');
 					return;
 				}
-				const dataURL = canvas.toDataURL('image/png');
 				try {
 					const storageRef = ref(storage, editorState.currentObjectID + '/' + Date.now());
 					await uploadString(storageRef, dataURL, 'data_url');
