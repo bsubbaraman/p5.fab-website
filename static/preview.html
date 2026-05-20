@@ -153,6 +153,9 @@
 					const canvas = document.querySelector('canvas');
 					const dataURL = canvas ? canvas.toDataURL('image/jpeg', 0.8) : null;
 					window.parent.postMessage({ type: 'screenshot_data', dataURL }, '*');
+				} else if (e.data?.type === 'get_gcode') {
+					const commands = (typeof fab !== 'undefined' && fab) ? fab.commands : [];
+					window.parent.postMessage({ type: 'gcode_data', commands: commands || [] }, '*');
 				}
 			});
 

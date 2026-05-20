@@ -17,6 +17,7 @@
 	import Split from 'split.js';
 	import EditorLog from '../../../components/EditorLog.svelte';
 	import MachineStatus from '../../../components/MachineStatus.svelte';
+	import { doGcodeDownload } from '$lib/download.js';
 
 	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
 	let initIframe = $state(false);
@@ -101,6 +102,11 @@
 		evalCode('fab.print()');
 	}
 
+	function downloadGcodeAnyway() {
+		editorState.staleGcodeDownloadModal = false;
+		doGcodeDownload();
+	}
+
 	function handleIframeLoad() {
 		console.log('iframe loaded');
 		const sketchWindow = document.getElementById('preview');
@@ -143,6 +149,18 @@
 					<div class="modal-buttons">
 						<button onclick={printAnyway}>Print Anyway</button>
 						<button onclick={() => (editorState.staleCodeModal = false)}>Cancel</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		{#if editorState.staleGcodeDownloadModal}
+			<div class="alert-overlay">
+				<div class="alert-modal">
+					<p>Your sketch has changed since the last run. Download GCode from the previous run?</p>
+					<div class="modal-buttons">
+						<button onclick={downloadGcodeAnyway}>Download Anyway</button>
+						<button onclick={() => (editorState.staleGcodeDownloadModal = false)}>Cancel</button>
 					</div>
 				</div>
 			</div>

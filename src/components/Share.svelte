@@ -1,10 +1,10 @@
 <script>
 	import imageCompression from 'browser-image-compression';
 	import { db, storage } from '../dbConfig';
-	import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
-	import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+	import { doc, updateDoc } from 'firebase/firestore';
+	import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+	import ImagePicker from './ImagePicker.svelte';
 
-	const MAX_FILES = 5;
 	const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
 
 	let { displayShareScreen = $bindable(), postData, objectID, onSaved } = $props();
@@ -12,37 +12,13 @@
 	let objectInfo = $state(postData.info);
 	let hasFabricated = $state(postData.hasFabricated);
 
-	// Combined list of existing + newly selected images for the picker
-	// Each entry: { url, file? } — file is set only for new uploads (not yet in storage)
-	let allPreviews = $state(
-		(postData.files ?? []).map((url) => ({ url, file: null }))
-	);
+	const initialFileURLs = new Set(postData.files ?? []);
+	let items = $state((postData.files ?? []).map((url) => ({ url, file: null })));
 	const currentThumbnail = postData.thumbnail ?? postData.files?.[0] ?? null;
-	let selectedIndex = $state(
-		Math.max(0, allPreviews.findIndex((p) => p.url === currentThumbnail))
-	);
+	let selectedIndex = $state(Math.max(0, (postData.files ?? []).indexOf(currentThumbnail)));
 
 	function toggleShareScreen() {
 		displayShareScreen = !displayShareScreen;
-	}
-
-	function uploadImages() {
-		document.getElementById('share-images').click();
-	}
-
-	function handleFileSelect(e) {
-		if (!e.target.files) return;
-		const newFiles = Array.from(e.target.files);
-		if (allPreviews.length + newFiles.length > MAX_FILES) {
-			alert(`Max ${MAX_FILES} images per post.`);
-			e.target.value = '';
-			return;
-		}
-		const newPreviews = newFiles.map((file) => ({
-			url: URL.createObjectURL(file),
-			file
-		}));
-		allPreviews = [...allPreviews, ...newPreviews];
 	}
 
 	async function saveEdit() {
@@ -63,9 +39,17 @@
 				modified: new Date()
 			};
 
+			// Delete any existing Storage files the user removed
+			const currentURLs = new Set(items.filter((p) => !p.file).map((p) => p.url));
+			await Promise.all(
+				[...initialFileURLs]
+					.filter((url) => !currentURLs.has(url))
+					.map((url) => deleteObject(ref(storage, url)).catch(() => {}))
+			);
+
 			// Upload any new files and resolve their final URLs
 			const resolved = await Promise.all(
-				allPreviews.map(async (p) => {
+				items.map(async (p) => {
 					if (!p.file) return p.url;
 					const compressed = await imageCompression(p.file, COMPRESSION_OPTIONS);
 					const storageRef = ref(storage, objectID + '/' + p.file.name);
@@ -74,15 +58,13 @@
 				})
 			);
 
-			const newURLs = resolved.filter((url, i) => allPreviews[i].file !== null);
-			if (newURLs.length > 0) {
-				updates.files = arrayUnion(...newURLs);
-			}
+			// Put the selected thumbnail first in the files array
+			updates.files = [resolved[selectedIndex], ...resolved.filter((_, i) => i !== selectedIndex)];
 			updates.thumbnail = resolved[selectedIndex];
 
 			await updateDoc(docRef, updates);
 			displayShareScreen = false;
-			if (onSaved) onSaved();
+			if (onSaved) onSaved({ files: updates.files, thumbnail: updates.thumbnail });
 		} catch (err) {
 			alert(err);
 		}
@@ -119,35 +101,8 @@
 			<input bind:group={hasFabricated} name="share-hasFabricated" type="radio" id="share-no" value="no" />
 			<label for="share-no">No</label>
 		</div>
-		<label for="share-images">Images</label>
-		<button class="file-upload" type="button" onclick={uploadImages}>
-			<i class="fa-solid fa-upload"></i><br />
-			<span class="upload-text">Upload more images</span>
-			<input
-				type="file"
-				id="share-images"
-				class="input"
-				name="share-images"
-				onchange={handleFileSelect}
-				accept="image/png, image/jpeg"
-				multiple
-			/>
-		</button>
-		{#if allPreviews.length > 0}
-			<label>Thumbnail — click to select</label>
-			<div class="thumbnail-picker">
-				{#each allPreviews as preview, i}
-					<label class="thumb-option">
-						<input type="radio" bind:group={selectedIndex} value={i} />
-						<img
-							src={preview.url}
-							alt="Post image"
-							class="thumb-preview {selectedIndex === i ? 'thumb-selected' : ''}"
-						/>
-					</label>
-				{/each}
-			</div>
-		{/if}
+		<label>Images</label>
+		<ImagePicker bind:items bind:selectedIndex />
 		<div class="submit">
 			<button onclick={saveEdit} type="submit" class="sign-up">Save</button>
 		</div>
@@ -162,26 +117,6 @@
 
 	input[type='radio'] {
 		accent-color: black;
-	}
-
-	input[type='file'] {
-		display: none;
-	}
-
-	.file-upload {
-		width: 100%;
-		min-height: 30px;
-		border: 1px solid #ccc;
-		display: inline-block;
-		margin-top: 5px;
-		text-align: center;
-		padding-top: 10px;
-		padding-bottom: 10px;
-		cursor: pointer;
-	}
-
-	.upload-text {
-		font-size: 12px;
 	}
 
 	textarea {
@@ -206,33 +141,5 @@
 
 	#share-info {
 		height: 80px;
-	}
-
-	.thumbnail-picker {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		margin-bottom: 12px;
-		margin-top: 8px;
-	}
-
-	.thumb-option {
-		cursor: pointer;
-		padding: 0;
-	}
-
-	.thumb-option input[type='radio'] {
-		display: none;
-	}
-
-	.thumb-preview {
-		width: 80px;
-		height: 80px;
-		object-fit: cover;
-		border: 2px solid transparent;
-	}
-
-	.thumb-selected {
-		border-color: black;
 	}
 </style>

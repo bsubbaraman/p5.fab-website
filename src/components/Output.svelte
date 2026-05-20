@@ -8,6 +8,8 @@
 			<div class="error-line"><span>error</span>{line.body}</div>
 		{:else if line.type === 'warn'}
 			<div class="warn-line"><span>warn</span>{line.body}</div>
+		{:else if line.type === 'p5'}
+			<div class="warn-line"><span>p5</span>{line.body}</div>
 		{:else if line.type === 'log'}
 			<div class="output-line">
 				{#if line.count > 1}

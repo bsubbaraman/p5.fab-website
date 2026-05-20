@@ -4,6 +4,7 @@
 	import { db, storage } from '../dbConfig.js';
 	import { editorState, store, authHandlers } from '../store/state.svelte.js';
 	import { evalSketch } from '$lib/repl';
+	import { downloadSketch, downloadGcode } from '$lib/download.js';
 	import { connectToMachine } from '$lib/events/connectToMachine';
 	import { startPrint } from '$lib/events/startPrint';
 	import { stopPrint } from '$lib/events/stopPrint';
@@ -195,6 +196,13 @@
 			<div class="menu-item">
 				<button id="sketchLogBtn" onclick={handleLog}>log</button>
 			</div>
+			<div class="dropdown">
+				<button>download</button>
+				<div class="dropdown-content">
+					<button class="dropdownBtn" onclick={downloadSketch}>sketch</button>
+					<button class="dropdownBtn" onclick={downloadGcode}>gcode</button>
+				</div>
+			</div>
 			<div class="menu-item">
 				<button id="sketchSaveBtn" onclick={handleSave}>{editorState.saveText}</button>
 			</div>
@@ -221,6 +229,7 @@
 		right: 0;
 		top: 50%;
 		transform: translateY(-50%);
+		z-index: 10;
 		display: flex;
 		align-items: center;
 	}
@@ -275,7 +284,7 @@
 		flex-direction: column;
 	}
 
-	.dropdown:hover .dropdown-content,
+.dropdown:hover .dropdown-content,
 	.dropdown-content:hover {
 		display: flex;
 		visibility: visible;

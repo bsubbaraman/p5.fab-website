@@ -5,37 +5,19 @@
 	import { getUserData } from '$lib/dbLoadSave.js';
 	import { getDoc, doc, collection, addDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
-	import Editor from './Editor.svelte';
+	import ImagePicker from './ImagePicker.svelte';
 	import { requestIframeScreenshot } from '$lib/screenshot.js';
 
-	const MAX_FILES = 5;
 	const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
 
 	let objectInfo = $state('');
 	let hasFabricated = $state('yes');
-	let files;
-	let filePreviewURLs = $state([]);
-	let selectedThumbnailIndex = $state(0);
+	let items = $state([]);
+	let selectedIndex = $state(0);
 	let isSubmitting = $state(false);
 
 	function toggleSavePane() {
 		editorState.displaySaveScreen = !editorState.displaySaveScreen;
-	}
-
-	function uploadImages() {
-		document.getElementById('images').click();
-	}
-
-	function handleFileSelect(e) {
-		if (!e.target.files) return;
-		if (e.target.files.length > MAX_FILES) {
-			alert(`Max ${MAX_FILES} images per post.`);
-			e.target.value = '';
-			return;
-		}
-		files = e.target.files;
-		selectedThumbnailIndex = 0;
-		filePreviewURLs = Array.from(files).map((f) => URL.createObjectURL(f));
 	}
 
 	async function postObject(event) {
@@ -89,11 +71,11 @@
 			const objectID = docRef.id;
 
 			var fileURLs = [];
-			if (files) {
+			if (items.length > 0) {
 				// Compress and upload user-provided images
-				for (var i = 0; i < files.length; i++) {
-					const compressed = await imageCompression(files[i], COMPRESSION_OPTIONS);
-					const storageRef = ref(storage, objectID + '/' + files[i].name);
+				for (const item of items) {
+					const compressed = await imageCompression(item.file, COMPRESSION_OPTIONS);
+					const storageRef = ref(storage, objectID + '/' + item.file.name);
 					await uploadBytes(storageRef, compressed);
 					const downloadURL = await getDownloadURL(storageRef);
 					fileURLs.push(downloadURL);
@@ -118,7 +100,7 @@
 
 			await updateDoc(docRef, {
 				files: fileURLs,
-				thumbnail: fileURLs[selectedThumbnailIndex] ?? fileURLs[0] ?? null
+				thumbnail: fileURLs[selectedIndex] ?? fileURLs[0] ?? null
 			});
 
 			// Add to the user's posts
@@ -195,31 +177,8 @@
 				<input bind:group={hasFabricated} name="hasFabricated" type="radio" id="no" value="no" />
 				<label for="no">No</label>
 			</div>
-			<label for="images">Files</label>
-			<button class="file-upload" type="button" onclick={uploadImages}>
-				<i class="fa-solid fa-upload"></i><br />
-				<span class="upload-text">Upload an image (or a few!) of what you made!</span>
-				<input
-					type="file"
-					id="images"
-					class="input"
-					name="images"
-					onchange={handleFileSelect}
-					accept="image/png, image/jpeg"
-					multiple
-				/>
-			</button>
-			{#if filePreviewURLs.length > 0}
-				<label>Thumbnail</label>
-				<div class="thumbnail-picker">
-					{#each filePreviewURLs as url, i}
-						<label class="thumb-option">
-							<input type="radio" bind:group={selectedThumbnailIndex} value={i} />
-							<img src={url} alt="Upload preview" class="thumb-preview {selectedThumbnailIndex === i ? 'thumb-selected' : ''}" />
-						</label>
-					{/each}
-				</div>
-			{/if}
+			<label>Files</label>
+			<ImagePicker bind:items bind:selectedIndex />
 
 			<div class="submit">
 				<button onclick={postObject} type="button" class="sign-up" disabled={isSubmitting || !objectInfo}>{isSubmitting ? 'Posting...' : 'Post!'}</button>
@@ -261,26 +220,6 @@
 		accent-color: black;
 	}
 
-	input[type='file'] {
-		display: none;
-	}
-
-	.file-upload {
-		width: 100%;
-		min-height: 30px;
-		border: 1px solid #ccc;
-		display: inline-block;
-		margin-top: 5px;
-		text-align: center;
-		padding-top: 10px;
-		padding-bottom: 10px;
-		cursor: pointer;
-	}
-
-	.upload-text {
-		font-size: 12px;
-	}
-
 	textarea {
 		width: 100%;
 		font-size: 0.8em;
@@ -303,33 +242,5 @@
 
 	#info {
 		height: 80px;
-	}
-
-	.thumbnail-picker {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		margin-bottom: 12px;
-		margin-top: 8px;
-	}
-
-	.thumb-option {
-		cursor: pointer;
-		padding: 0;
-	}
-
-	.thumb-option input[type='radio'] {
-		display: none;
-	}
-
-	.thumb-preview {
-		width: 80px;
-		height: 80px;
-		object-fit: cover;
-		border: 2px solid transparent;
-	}
-
-	.thumb-selected {
-		border-color: black;
 	}
 </style>

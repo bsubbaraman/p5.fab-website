@@ -3,26 +3,31 @@
 // MIT License
 
 (function (global) {
+	/**
+	 * Use _log/_warn/_error throughout this file
+	 * so p5.fab internal messages always go to the browser devtools console,
+	 * regardless of what the editor's eval'd sketch code does.
+	 */
+	const _log = console.log.bind(console);
+	const _warn = console.warn.bind(console);
+	const _error = console.error.bind(console);
+
 	let _fab;
 	let _once = false;
 	let _savedShapesCounter = 0;
-
 	const moveCommands = ['G0', 'G1', 'G2', 'G3'];
 
-	//===================================
-	// Prototype Functions
-	//===================================
 	/**
 	 * Creates and returns the global `fab` object. Call this once in `setup()`.
 	 *
-	 * `createFab()` is a singleton — calling it multiple times returns the same
+	 * Calling it multiple times returns the same
 	 * instance, preserving any open serial connection across hot-reloads.
 	 *
 	 * **Hot-reload behavior:** In the copypastes.xyz editor, `setup()` re-runs
 	 * every time you run your sketch. This means changes to `setup()` (e.g.
 	 * `setPrinter()`, canvas size) take effect immediately. However, avoid
 	 * creating p5.js DOM elements (`createButton()`, `createSlider()`, etc.) in
-	 * `setup()` — they will be duplicated on each run.
+	 * `setup()`: they will be duplicated on each run.
 	 *
 	 * @memberof Fab
 	 * @returns {Fab} The global fab instance.
@@ -86,15 +91,13 @@
 		if (this._renderer.isP3D) {
 			return this._renderer.saveShape(...arguments);
 		} else {
-			console.warn("Don't use saveShape in 2D mode.");
+			_warn("Don't use saveShape in 2D mode.");
 		}
 	};
 
 	p5.prototype.reloadSketch = function () {
 		if (!_fab) {
-			console.warn(
-				'p5.fab: fab = createFab() was not called in setup(). Creating fab automatically.'
-			);
+			_warn('p5.fab: fab = createFab() was not called in setup(). Creating fab automatically.');
 			_fab = new Fab();
 			global.fab = new Proxy(_fab, fabValidationHandler);
 		} else {
@@ -234,7 +237,7 @@
 				.then((config) => {
 					printerPresets[name] = config;
 				})
-				.catch((e) => console.warn(`p5.fab: could not load preset "${name}"`, e))
+				.catch((e) => _warn(`p5.fab: could not load preset "${name}"`, e))
 		)
 	);
 
@@ -251,30 +254,30 @@
 
 	const FAB_PARAM_NAMES = Object.freeze({
 		// Drawing — v optional (printer uses last speed)
-		circle:      ['x', 'y', 'z', 'd'],
+		circle: ['x', 'y', 'z', 'd'],
 		// Absolute movement — v optional
-		moveTo:      ['x', 'y', 'z'],
-		travelTo:    ['x', 'y', 'z'],
-		moveToX:     ['x'],
-		moveToY:     ['y'],
-		moveToZ:     ['z'],
+		moveTo: ['x', 'y', 'z'],
+		travelTo: ['x', 'y', 'z'],
+		moveToX: ['x'],
+		moveToY: ['y'],
+		moveToZ: ['z'],
 		// Relative movement — v optional
-		move:        ['dx', 'dy', 'dz'],
-		moveX:       ['dx'],
-		moveY:       ['dy'],
-		moveZ:       ['dz'],
+		move: ['dx', 'dy', 'dz'],
+		moveX: ['dx'],
+		moveY: ['dy'],
+		moveZ: ['dz'],
 		// Absolute extrusion — e auto-calculated, v optional
 		moveExtrude: ['x', 'y', 'z'],
 		moveRetract: ['x', 'y', 'z'],
 		extrudeToXY: ['x', 'y'],
 		// Relative extrusion — e auto-calculated, v optional
-		extrudeX:    ['dx'],
-		extrudeXY:   ['dx', 'dy'],
-		extrudeY:    ['dy'],
-		extrudeZ:    ['dz'],
+		extrudeX: ['dx'],
+		extrudeXY: ['dx', 'dy'],
+		extrudeY: ['dy'],
+		extrudeZ: ['dz'],
 		// Config — these are the whole point of the call
-		setTemps:    ['tNozzle', 'tBed'],
-		setSpeed:    ['v'],
+		setTemps: ['tNozzle', 'tBed'],
+		setSpeed: ['v']
 	});
 
 	const fabValidationHandler = {
@@ -289,17 +292,23 @@
 				const received = args.length;
 				const word = received === 1 ? 'argument' : 'arguments';
 				if (received < names.length) {
-					window.parent.postMessage({
-						type: 'output',
-						body: `p5.fab says: ${prop}() received ${received} ${word}, expected at least ${names.length}.`
-					}, '*');
+					window.parent.postMessage(
+						{
+							type: 'output',
+							body: `p5.fab says: ${prop}() received ${received} ${word}, expected at least ${names.length}.`
+						},
+						'*'
+					);
 					return;
 				}
 				if (maxParams > 0 && received > maxParams) {
-					window.parent.postMessage({
-						type: 'output',
-						body: `p5.fab says: ${prop}() received ${received} ${word}, expected no more than ${maxParams}.`
-					}, '*');
+					window.parent.postMessage(
+						{
+							type: 'output',
+							body: `p5.fab says: ${prop}() received ${received} ${word}, expected no more than ${maxParams}.`
+						},
+						'*'
+					);
 					return;
 				}
 				return val.apply(target, args);
@@ -333,7 +342,7 @@
 			this.camera.setPosition(0, 0, 400);
 			this.cameraPosition = new p5.Vector(0, 0, 400);
 			this.cameraOrientation = new p5.Vector(0, 0, 0);
-			this.setCameraView('home');  // uses maxX/maxY/maxZ already set by configure()
+			this.setCameraView('home'); // uses maxX/maxY/maxZ already set by configure()
 			this._needsCameraReInit = false;
 			this.syncVizStream = true;
 			this.tempQueryIntervalID = null;
@@ -438,11 +447,20 @@
 			const preset = printerPresets[name];
 			if (!preset) {
 				const available = Object.keys(printerPresets).join(', ') || 'none loaded yet';
-				window.parent.postMessage({ type: 'output', body: `p5.fab says: unknown printer preset "${name}". Available: ${available}` }, '*');
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: unknown printer preset "${name}". Available: ${available}`
+					},
+					'*'
+				);
 				return;
 			}
 			this.configure({ ...defaultPrinterSettings, ...preset, ...overrides });
-			window.parent.postMessage({ type: 'fab_config', body: { property: 'printerName', value: name } }, '*');
+			window.parent.postMessage(
+				{ type: 'fab_config', body: { property: 'printerName', value: name } },
+				'*'
+			);
 		}
 
 		setupSerialConnection() {
@@ -457,17 +475,20 @@
 			});
 
 			this.serial.on('requesterror', function () {
-				console.error('p5.fab: serial connection request failed.');
+				_error('p5.fab: serial connection request failed.');
 			});
 
 			this.serial.on('data', this.onData);
 
 			this.serial.on('open', function () {
 				_fab.connected = true;
-				window.parent.postMessage({
-					type: 'fab_status',
-					body: { event: 'connection', connected: true }
-				}, '*');
+				window.parent.postMessage(
+					{
+						type: 'fab_status',
+						body: { event: 'connection', connected: true }
+					},
+					'*'
+				);
 				_fab.serial.write('M114\n');
 				_fab.tempQueryIntervalID = setInterval(() => {
 					if (!_fab.isPrinting) {
@@ -479,10 +500,13 @@
 
 			this.serial.on('close', function () {
 				_fab.connected = false;
-				window.parent.postMessage({
-					type: 'fab_status',
-					body: { event: 'connection', connected: false }
-				}, '*');
+				window.parent.postMessage(
+					{
+						type: 'fab_status',
+						body: { event: 'connection', connected: false }
+					},
+					'*'
+				);
 				clearInterval(_fab.tempQueryIntervalID);
 				_fab.tempQueryIntervalID = null;
 			});
@@ -500,17 +524,23 @@
 
 		print() {
 			if (this.isPrinting) {
-				window.parent.postMessage({
-					type: 'fab_status',
-					body: { event: 'print_error', reason: 'already_printing' }
-				}, '*');
+				window.parent.postMessage(
+					{
+						type: 'fab_status',
+						body: { event: 'print_error', reason: 'already_printing' }
+					},
+					'*'
+				);
 				return;
 			}
 			if (this.commands.length === 0) {
-				window.parent.postMessage({
-					type: 'fab_status',
-					body: { event: 'print_error', reason: 'no_commands' }
-				}, '*');
+				window.parent.postMessage(
+					{
+						type: 'fab_status',
+						body: { event: 'print_error', reason: 'no_commands' }
+					},
+					'*'
+				);
 				return;
 			}
 			if (this.syncVizStream) {
@@ -602,7 +632,10 @@
 					if (nozzleMatch) tempBody.nozzle = parseFloat(nozzleMatch[1]);
 					if (bedMatch) tempBody.bed = parseFloat(bedMatch[1]);
 					if (nozzleMatch || bedMatch) {
-						window.parent.postMessage({ type: 'fab_status', body: { event: 'temp', ...tempBody } }, '*');
+						window.parent.postMessage(
+							{ type: 'fab_status', body: { event: 'temp', ...tempBody } },
+							'*'
+						);
 					}
 				}
 			}
@@ -631,15 +664,18 @@
 				this.gotInitPosition = true;
 			}
 
-			window.parent.postMessage({
-				type: 'fab_status',
-				body: {
-					event: 'position',
-					x: parseFloat(this.reportedPos['X']),
-					y: parseFloat(this.reportedPos['Y']),
-					z: parseFloat(this.reportedPos['Z'])
-				}
-			}, '*');
+			window.parent.postMessage(
+				{
+					type: 'fab_status',
+					body: {
+						event: 'position',
+						x: parseFloat(this.reportedPos['X']),
+						y: parseFloat(this.reportedPos['Y']),
+						z: parseFloat(this.reportedPos['Z'])
+					}
+				},
+				'*'
+			);
 		}
 
 		parseGcode() {
@@ -740,14 +776,26 @@
 					cmd.forEach((c) => {
 						const val = c.substring(1);
 						switch (c.charAt(0)) {
-							case 'X': newV.x = val; break;
-							case 'Y': newV.z = val; break;
-							case 'Z': newV.y = -1 * val; break;
+							case 'X':
+								newV.x = val;
+								break;
+							case 'Y':
+								newV.z = val;
+								break;
+							case 'Z':
+								newV.y = -1 * val;
+								break;
 							case 'E':
-								if (val < 0) { newV = null; skip = true; }
+								if (val < 0) {
+									newV = null;
+									skip = true;
+								}
 								break;
 							case ';':
-								if (val == 'prime' || val == 'present') { newV = null; skip = true; }
+								if (val == 'prime' || val == 'present') {
+									newV = null;
+									skip = true;
+								}
 								break;
 						}
 					});
@@ -756,7 +804,7 @@
 				}
 
 				if (end < commands.length) {
-					await new Promise(r => requestAnimationFrame(r));
+					await new Promise((r) => requestAnimationFrame(r));
 				}
 			}
 
@@ -864,7 +912,7 @@
 
 			if (view === 'home') {
 				this.cameraOrientation.set(cx, cy_mid, cz);
-				this.cameraPosition.set(cx + d * 0.6, cy_mid - d * 0.5, cz + d * 0.6);
+				this.cameraPosition.set(cx + d * 0.3, cy_mid + d * -0.25, cz + d * 0.95);
 			} else if (view === 'top') {
 				// Steep top-down view with slight +Z tilt so the look direction is never
 				// parallel to the default up vector (0,1,0), avoiding gimbal lock. ~81° elevation.
@@ -1692,7 +1740,7 @@
 			_fab.recoverCameraPosition = true;
 			resizeCanvas(windowWidth, windowHeight);
 		} catch (e) {
-			console.warn(e);
+			_warn(e);
 		}
 	}
 	global.windowResized = windowResized;

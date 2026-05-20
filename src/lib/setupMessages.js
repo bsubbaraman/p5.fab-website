@@ -88,12 +88,12 @@ export function setupMessages() {
         messageBody = messageBody.toString();
 
         if (messageBody.includes('p5.fab says:')) {
-            setOutput(false, [{ type: 'warn', body: messageBody }]);
+            setOutput(true, { type: 'warn', body: messageBody });
             return;
         }
 
         if (messageBody.includes('p5.js says:')) {
-            setOutput(false, [{ type: 'p5', body: messageBody }]);
+            setOutput(true, { type: 'p5', body: messageBody });
             return;
         }
 

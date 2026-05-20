@@ -87,6 +87,11 @@
 		displayShareScreen = !displayShareScreen;
 	}
 
+	function handleShareSaved({ files, thumbnail }) {
+		postData = { ...postData, files, thumbnail };
+		galleryIndex = 0;
+	}
+
 	async function deletePost() {
 		if (!confirm('Delete this post? This cannot be undone.')) return;
 		// Delete all storage files
@@ -108,7 +113,7 @@
 	<Header />
 	<div class="page-container card">
 		{#if displayShareScreen}
-			<Share bind:displayShareScreen {postData} {objectID} onSaved={fetchPostData} />
+			<Share bind:displayShareScreen {postData} {objectID} onSaved={handleShareSaved} />
 		{:else if postData}
 			<div class="fabHeader">
 				<h1 class="fabName">{postData.name}</h1>
@@ -266,7 +271,6 @@
 
 	.images {
 		width: 100%;
-		height: 300px;
 		margin-bottom: 50px;
 		display: flex;
 		justify-content: center;

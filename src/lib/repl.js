@@ -32,7 +32,7 @@ export async function evalSketch(sketchCode) {
       `    return () => {\n` +
       `      console.log = (function(){\n` +
       `        return function (txt) {\n` +
-      `          window.parent.postMessage({ type: "output", body: txt});\n` +
+      `          window.parent.postMessage({ type: "output", body: txt }, '*');\n` +
       `        };\n` +
       `      })();\n` +
       `      `;
@@ -51,9 +51,9 @@ export async function evalSketch(sketchCode) {
     editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code:
       evalPrefix +
       codeToEval +
-      `\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }); };` +
-      `\n      try { window.draw = draw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }); };` +
-      `\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }); };` +
+      `\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
+      `\n      try { window.draw = draw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
+      `\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
       `\n      try { window.windowResized = windowResized } catch (e) { console.log("no resize") };` +
       `\n    }\n  })()()`
     }, '*');
@@ -133,7 +133,7 @@ function injectTryCatch(sketchCode, prefixLines) {
         `\n}\ncatch (e){\n` +
         `const __m = e.stack && e.stack.match(/<anonymous>:(\\d+):\\d+/);\n` +
         `const __ln = __m ? parseInt(__m[1]) - ${lineOffset} : null;\n` +
-        `window.parent.postMessage({ type: "error", body: e.toString(), line: __ln });\n` +
+        `window.parent.postMessage({ type: "error", body: e.toString(), line: __ln }, '*');\n` +
         `}\n}\n`;
     }
     else {
@@ -146,7 +146,7 @@ function injectTryCatch(sketchCode, prefixLines) {
 
 function checkp5Init() {
   if (!editorState.p5Initialized) {
-    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `try { remove() } catch (e) { window.parent.postMessage({ type: "debug", body: "remove() failed"}); }` }, '*');
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `try { remove() } catch (e) { window.parent.postMessage({ type: "debug", body: "remove() failed"}, '*'); }` }, '*');
     editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `new p5()` }, '*');
     editorState.p5Initialized = true;
   }
