@@ -365,9 +365,10 @@
 				maxY: this.maxY,
 				maxZ: this.maxZ,
 				nozzleDiameter: this._nozzleDiameter,
-				filamentDiameter: this.filamentDiameter
+				filamentDiameter: this._filamentDiameter
 			};
-			console.log('FAB_CONFIG', messageData);
+			console.debug('FAB_CONFIG', messageData);
+			window.parent.postMessage({ type: 'fab_config', body: messageData });
 			if (this.cameraPosition) {
 				this.setCameraView('home');
 			}
@@ -379,7 +380,8 @@
 				property: 'nozzleDiameter',
 				value: this._nozzleDiameter
 			};
-			console.log('FAB_CONFIG_CHANGE', messageData);
+			console.debug('FAB_CONFIG_CHANGE', messageData);
+			window.parent.postMessage({ type: 'fab_config', body: messageData });
 		}
 
 		set filamentDiameter(d) {
@@ -388,13 +390,15 @@
 				property: 'filamentDiameter',
 				value: this._filamentDiameter
 			};
-			console.log('FAB_CONFIG_CHANGE', messageData);
+			console.debug('FAB_CONFIG_CHANGE', messageData);
+			window.parent.postMessage({ type: 'fab_config', body: messageData });
 		}
 
 		set maxX(v) {
 			this._maxX = v;
 			this.centerX = v / 2;
-			console.log('FAB_CONFIG_CHANGE', { property: 'maxX', value: v });
+			console.debug('FAB_CONFIG_CHANGE', { property: 'maxX', value: v });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxX', value: v } });
 		}
 		get maxX() {
 			return this._maxX;
@@ -403,7 +407,8 @@
 		set maxY(v) {
 			this._maxY = v;
 			this.centerY = v / 2;
-			console.log('FAB_CONFIG_CHANGE', { property: 'maxY', value: v });
+			console.debug('FAB_CONFIG_CHANGE', { property: 'maxY', value: v });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxY', value: v } });
 		}
 		get maxY() {
 			return this._maxY;
@@ -411,7 +416,8 @@
 
 		set maxZ(v) {
 			this._maxZ = v;
-			console.log('FAB_CONFIG_CHANGE', { property: 'maxZ', value: v });
+			console.debug('FAB_CONFIG_CHANGE', { property: 'maxZ', value: v });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxZ', value: v } });
 		}
 		get maxZ() {
 			return this._maxZ;
@@ -431,10 +437,11 @@
 			const preset = printerPresets[name];
 			if (!preset) {
 				const available = Object.keys(printerPresets).join(', ') || 'none loaded yet';
-				console.warn(`p5.fab: unknown printer preset "${name}". Available: ${available}`);
+				window.parent.postMessage({ type: 'output', body: `p5.fab says: unknown printer preset "${name}". Available: ${available}` });
 				return;
 			}
 			this.configure({ ...defaultPrinterSettings, ...preset, ...overrides });
+			window.parent.postMessage({ type: 'fab_config', body: { property: 'printerName', value: name } });
 		}
 
 		setupSerialConnection() {
@@ -1640,7 +1647,7 @@
 			_fab.recoverCameraPosition = true;
 			resizeCanvas(windowWidth, windowHeight);
 		} catch (e) {
-			console.log(e);
+			console.warn(e);
 		}
 	}
 	global.windowResized = windowResized;

@@ -4,6 +4,9 @@
 	let editingField = $state(null);
 	let editValue = $state('');
 
+	const hasConfig = $derived(editorState.machineStatus.nozzleDiameter !== null);
+	let showConfig = $state(false);
+
 	const canEdit = $derived(
 		editorState.machineStatus.connected && !editorState.machineStatus.isPrinting
 	);
@@ -152,6 +155,26 @@
 			{/each}
 		</span>
 	{/if}
+	{#if hasConfig}
+		<span
+			class="config-icon"
+			role="tooltip"
+			onmouseenter={() => (showConfig = true)}
+			onmouseleave={() => (showConfig = false)}
+		>
+			ⓘ
+			{#if showConfig}
+				<div class="config-popover">
+					{#if editorState.machineStatus.printerName !== null}
+						<div>Printer: {editorState.machineStatus.printerName}</div>
+					{/if}
+					<div>Nozzle: {editorState.machineStatus.nozzleDiameter}mm</div>
+					<div>Filament: {editorState.machineStatus.filamentDiameter}mm</div>
+					<div>Build: {editorState.machineStatus.maxX} × {editorState.machineStatus.maxY} × {editorState.machineStatus.maxZ}mm</div>
+				</div>
+			{/if}
+		</span>
+	{/if}
 </div>
 
 <style>
@@ -241,5 +264,33 @@
 		outline: none;
 		padding: 0;
 		text-align: right;
+	}
+
+	.config-icon {
+		position: relative;
+		margin-left: auto;
+		cursor: default;
+		color: #999;
+		font-size: 0.85rem;
+		user-select: none;
+	}
+
+	.config-icon:hover {
+		color: #333;
+	}
+
+	.config-popover {
+		position: absolute;
+		bottom: calc(100% + 6px);
+		right: 0;
+		background: white;
+		border: 1px solid black;
+		box-shadow: 4px 4px var(--ma-orange);
+		padding: 0.5rem 0.75rem;
+		white-space: nowrap;
+		font-size: 0.8rem;
+		line-height: 1.6;
+		z-index: 100;
+		pointer-events: none;
 	}
 </style>

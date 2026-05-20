@@ -15,6 +15,7 @@ export function setupMessages() {
             output: messageOutput,
             debug: messageDebug,
             fab_status: messageFabStatus,
+            fab_config: messageFabConfig,
         };
         if (messageSwitch[message.type]) {
             messageSwitch[message.type](message.body, message.line);
@@ -22,6 +23,18 @@ export function setupMessages() {
     });
 
     function messageReady(_) { }
+
+    function messageFabConfig(body) {
+        if (body.property) {
+            editorState.machineStatus[body.property] = body.value;
+        } else {
+            editorState.machineStatus.nozzleDiameter = body.nozzleDiameter;
+            editorState.machineStatus.filamentDiameter = body.filamentDiameter;
+            editorState.machineStatus.maxX = body.maxX;
+            editorState.machineStatus.maxY = body.maxY;
+            editorState.machineStatus.maxZ = body.maxZ;
+        }
+    }
 
     function messageFabStatus(body) {
         if (body.event === 'connection') {
