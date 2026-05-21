@@ -1,9 +1,61 @@
 <script>
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
 	import { store, authHandlers } from '../store/state.svelte.js';
 	import { toggleAuthContainer, signOut } from '$lib/events/auth.js';
 	import SignIn from './SignIn.svelte';
 	import SignUp from './SignUp.svelte';
+
+	let dividerContainer = $state();
+	let pathD = $state('');
+
+	const margin = 32;
+	const periods = 40;
+	const amplitude = 6;
+	const centerY = 22;
+	const steps = 1000;
+	const sigma = 40;
+	const extraFactor = 2.5;
+
+	let pointerX = 0;
+	let intensity = 0;
+	let targetIntensity = 0;
+	let lastTs = 0;
+	let raf;
+
+	function buildPath() {
+		const width = dividerContainer.clientWidth - 2 * margin;
+		const pts = Array.from({ length: steps + 1 }, (_, i) => {
+			const x = margin + (i / steps) * width;
+			const dx = x - pointerX;
+			const env = 1 + extraFactor * intensity * Math.exp(-(dx * dx) / (2 * sigma * sigma));
+			const y = centerY + amplitude * env * Math.sin((i / steps) * periods * 2 * Math.PI);
+			return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
+		});
+		return pts.join(' ');
+	}
+
+	function frame(ts) {
+		const dt = lastTs ? (ts - lastTs) / 1000 : 0;
+		lastTs = ts;
+		intensity += (targetIntensity - intensity) * Math.min(1, 8 * dt);
+		pathD = buildPath();
+		raf = requestAnimationFrame(frame);
+	}
+
+	function handlePointerMove(e) {
+		pointerX = e.clientX - dividerContainer.getBoundingClientRect().left;
+		targetIntensity = 1;
+	}
+
+	function handlePointerLeave() {
+		targetIntensity = 0;
+	}
+
+	onMount(() => {
+		raf = requestAnimationFrame(frame);
+		return () => cancelAnimationFrame(raf);
+	});
 </script>
 
 <header>
@@ -22,20 +74,12 @@
 			<div class="menu-item">
 				<a href="https://machineagency.github.io/p5.fab-docs/" target="_blank">Docs</a>
 			</div>
-
-			<!-- {#if store.user}
-				<div class="menu-item">
-					<div class="dropdown">
-						<a href="/share" class:active={page.url.pathname == '/share'}>Share</a>
-					</div>
-				</div>
-			{/if} -->
 			<div class="menu-item">
 				<a href="/about" class:active={page.url.pathname == '/about'}>About</a>
 			</div>
 			{#if !store.user}
 				<div class="menu-item">
-					<a onclick={toggleAuthContainer}>Sign In</a>
+					<button class="sign-in-btn" onclick={toggleAuthContainer}>Sign In</button>
 				</div>
 			{:else}
 				<div class="menu-item">
@@ -48,6 +92,25 @@
 				</div>
 			{/if}
 		</div>
+	</div>
+	<div
+		class="wave-divider"
+		bind:this={dividerContainer}
+		onpointermove={handlePointerMove}
+		onpointerleave={handlePointerLeave}
+	>
+		{#if pathD}
+			<svg width="100%" height="50">
+				<path
+					d={pathD}
+					stroke="black"
+					fill="none"
+					stroke-width="2.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			</svg>
+		{/if}
 	</div>
 </header>
 
@@ -68,8 +131,6 @@
 		right: 0px;
 		height: 10vh;
 		min-height: 1.75em;
-		border-bottom: 1px solid black;
-		/* box-shadow: 0 1px 3px 0 grey; */
 	}
 
 	.nav-left {
@@ -154,5 +215,26 @@
 	.dropdownBtn:hover {
 		color: var(--white);
 		background-color: var(--nord3);
+	}
+
+	.wave-divider {
+		width: 100%;
+		line-height: 0;
+	}
+
+	.sign-in-btn {
+		background: none;
+		border: none;
+		font-size: 1em;
+		font-family: 'Inter', sans-serif;
+		padding: 0;
+		cursor: pointer;
+	}
+
+	.sign-in-btn:hover {
+		background: none;
+		text-decoration: underline;
+		text-decoration-color: var(--ma-orange);
+		text-decoration-thickness: 3px;
 	}
 </style>

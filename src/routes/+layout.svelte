@@ -1,12 +1,15 @@
 <script>
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { auth, db } from '../dbConfig';
 	import { getDoc, doc } from 'firebase/firestore';
 	import { store } from '../store/state.svelte.js';
 	import { setupMessages } from '$lib/setupMessages.js';
 
 	onMount(() => {
+		if (page.url.pathname.startsWith('/embed')) return;
+
 		const unsubscribe = auth.onAuthStateChanged(async (user) => {
 			if (!user) {
 				return;

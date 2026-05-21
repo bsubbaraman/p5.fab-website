@@ -140,7 +140,7 @@
 			addEventListener(
 				'DOMContentLoaded',
 				(e) => {
-					window.parent.postMessage({ type: 'ready', body: '' });
+					window.parent.postMessage({ type: 'ready', body: '' }, '*');
 				},
 				{ once: true }
 			);

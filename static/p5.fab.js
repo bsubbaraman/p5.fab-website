@@ -512,7 +512,7 @@
 			});
 
 			if (this.autoConnect) {
-				this.serial.getPorts();
+				Promise.resolve(this.serial.getPorts()).catch(() => {});
 			}
 
 			this.on('ok', this.serial_ok);
@@ -1271,8 +1271,18 @@
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.moveExtrude(100, 100, 0.2, 1500); // extrude to (100, 100)
+		 *   fab.autoHome();
+		 *   fab.moveExtrude(100, 100, 0);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		moveExtrude(x, y, z, v, e = null, multiplier = false) {

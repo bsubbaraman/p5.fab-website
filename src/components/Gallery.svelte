@@ -5,11 +5,11 @@
 
 	const PAGE_SIZE = 24;
 
-	let posts = $state([]);       // array of { id, ...data }
-	let lastDoc = $state(null);   // Firestore cursor
+	let posts = $state([]); // array of { id, ...data }
+	let lastDoc = $state(null); // Firestore cursor
 	let hasMore = $state(true);
 	let loading = $state(false);
-	let sentinel;                 // DOM element watched by IntersectionObserver
+	let sentinel; // DOM element watched by IntersectionObserver
 
 	async function fetchPage() {
 		if (loading || !hasMore) return;
