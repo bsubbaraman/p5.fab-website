@@ -6,12 +6,16 @@
 	import { getDoc, doc, collection, addDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 	import ImagePicker from './ImagePicker.svelte';
+	import MachineFields from './MachineFields.svelte';
 	import { requestIframeScreenshot } from '$lib/screenshot.js';
 
 	const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
 
 	let objectInfo = $state('');
 	let hasFabricated = $state('yes');
+	let machineType = $state('');
+	let machineModel = $state('');
+	let materials = $state([]);
 	let items = $state([]);
 	let selectedIndex = $state(0);
 	let isSubmitting = $state(false);
@@ -56,6 +60,11 @@
 				username: username,
 				info: objectInfo,
 				hasFabricated: hasFabricated,
+				...(hasFabricated === 'yes' && {
+					machineType: machineType || null,
+					machineModel: machineModel || null,
+					materials: materials.length ? materials : null
+				}),
 				code: editorState.globalSketch,
 				isFork: isFork,
 				favorites: 0,
@@ -147,10 +156,11 @@
 </script>
 
 <div class="shareContainer">
-	<div class="shareForm">
+	<div class="card-content shadow nohover shareForm">
 		<button aria-label="Close" onclick={toggleSavePane} class="close">
 			<i class="fa-solid fa-x"></i>
 		</button>
+		<h2>Post to p5.fab</h2>
 		<form>
 			<label for="title">Name</label>
 			<input
@@ -170,13 +180,7 @@
 				placeholder="Tell everyone about what you made!"
 				required
 			></textarea>
-			<label for="made">Have you tried physically making this?</label>
-			<div class="made">
-				<input bind:group={hasFabricated} name="hasFabricated" type="radio" id="yes" value="yes" />
-				<label for="yes">Yes</label><br />
-				<input bind:group={hasFabricated} name="hasFabricated" type="radio" id="no" value="no" />
-				<label for="no">No</label>
-			</div>
+			<MachineFields bind:hasFabricated bind:machineType bind:machineModel bind:materials namePrefix="" />
 			<label>Files</label>
 			<ImagePicker bind:items bind:selectedIndex />
 
@@ -190,34 +194,25 @@
 <style>
 	.shareContainer {
 		z-index: 102;
-		padding: 50px;
-		background: white;
 		position: fixed;
-		width: 100%;
-		height: 100%;
-		/* height: 200px; */
+		inset: 0;
+		background: white;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		overflow-y: auto;
+		padding: 50px;
+		box-sizing: border-box;
 	}
 
 	.shareForm {
 		width: 50%;
-		height: 75%;
-		padding: 60px;
-		position: fixed;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		margin-right: -50%;
-		/* box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.15); */
 		min-width: 300px;
 	}
 
 	.input {
 		width: 100%;
 		font-size: 0.8em;
-	}
-
-	input[type='radio'] {
-		accent-color: black;
 	}
 
 	textarea {
@@ -229,10 +224,6 @@
 	label {
 		font-size: 12px;
 		padding-bottom: 50px;
-	}
-
-	.made {
-		padding-bottom: 20px;
 	}
 
 	.submit {

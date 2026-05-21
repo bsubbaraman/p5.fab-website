@@ -488,6 +488,26 @@ button:disabled:hover {
     cursor: row-resize;
 }
 
+input[type='radio'],
+input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid black;
+    border-radius: 0;
+    cursor: pointer;
+    vertical-align: -2px;
+    flex-shrink: 0;
+    transition: background-color 0.15s;
+    margin-right: 4px;
+}
+
+input[type='radio']:checked,
+input[type='checkbox']:checked {
+    background-color: var(--ma-orange);
+}
+
 .flash-code-on {
     background-color: var(--ma-orange);
 }

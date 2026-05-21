@@ -30,24 +30,23 @@
 		}
 
 		if (postData.numForks) {
-			const forkEntries = (await Promise.all(
-				Object.values(postData.forks).map(async (fork) => {
-					const fd = await getPostFromDB(fork.objectID);
-					if (!fd) return null;
-					return [fork.objectID, { ...fd, authorUID: fork.authorUID, username: fork.username }];
-				})
-			)).filter(Boolean);
+			const forkEntries = (
+				await Promise.all(
+					Object.values(postData.forks).map(async (fork) => {
+						const fd = await getPostFromDB(fork.objectID);
+						if (!fd) return null;
+						return [fork.objectID, { ...fd, authorUID: fork.authorUID, username: fork.username }];
+					})
+				)
+			).filter(Boolean);
 			forkData = Object.fromEntries(forkEntries);
 		}
 	}
 
-	function getDate() {
-		// TODO: Might want to show 'modified' date at some point?
-		const createdDate = postData.created.toDate();
-		const month = createdDate.toLocaleString('default', { month: 'long' });
-		const day = createdDate.getUTCDate();
-		const year = createdDate.getFullYear();
-		return `${month} ${day} ${year} `;
+	function formatDate(ts) {
+		const d = typeof ts?.toDate === 'function' ? ts.toDate() : new Date(ts);
+		const month = d.toLocaleString('default', { month: 'long' });
+		return `${month} ${d.getDate()} ${d.getFullYear()}`;
 	}
 
 	async function likePost() {
@@ -87,8 +86,8 @@
 		displayShareScreen = !displayShareScreen;
 	}
 
-	function handleShareSaved({ files, thumbnail }) {
-		postData = { ...postData, files, thumbnail };
+	function handleShareSaved(updates) {
+		postData = { ...postData, ...updates };
 		galleryIndex = 0;
 	}
 
@@ -123,13 +122,16 @@
 				{#if postData.isFork && parentData}
 					<span class="meta"
 						>remix of <b
-							><a data-sveltekit-reload href="/fabs/{postData.parentSketch}"
-								>{parentData.name}</a
+							><a data-sveltekit-reload href="/fabs/{postData.parentSketch}">{parentData.name}</a
 							></b
 						></span
 					><br />
 				{/if}
-				<span class="meta">{getDate()}</span>
+				<span class="meta">
+					published {formatDate(postData.created)}
+					{#if postData.modified}
+						| edited {formatDate(postData.modified)}{/if}
+				</span>
 				{#if store.user && store.user.uid == postData.authorUID}
 					<br />
 					<span class="meta edit" onclick={toggleShareScreen}><b>edit</b></span>
@@ -175,12 +177,19 @@
 				</div>
 				<div class="fabInfo">
 					<h3>Info</h3>
-					{#if postData.materials}
-						<b>Material:</b>
-						{#each postData.materials as mat, i}
-							{postData.materials[i]}
-						{/each}
-						<br /><br />
+					{#if postData.hasFabricated === 'yes'}
+						{#if postData.machineType}
+							<b>Machine:</b> {postData.machineType}<br />
+						{/if}
+						{#if postData.machineModel}
+							<b>Model:</b> {postData.machineModel}<br />
+						{/if}
+						{#if postData.materials?.length}
+							<b>Material:</b> {postData.materials.join(', ')}<br />
+						{/if}
+						{#if postData.machineType || postData.machineModel || postData.materials?.length}
+							<br />
+						{/if}
 					{/if}
 					{postData.info}
 				</div>
@@ -221,11 +230,7 @@
 						<div class="remix-grid">
 							{#each Object.entries(forkData) as [forkID, fd]}
 								<div class="project-tile shadowRemix">
-									<a
-										aria-label="Project page"
-										data-sveltekit-reload
-										href="/fabs/{forkID}"
-									>
+									<a aria-label="Project page" data-sveltekit-reload href="/fabs/{forkID}">
 										<div class="project-photo-container">
 											<img
 												alt="Contributed project"

@@ -1,7 +1,7 @@
 <script>
 	const MAX_FILES = 5;
 
-	let { items = $bindable([]), selectedIndex = $bindable(0) } = $props();
+	let { items = $bindable([]), selectedIndex = $bindable(0), minItems = 0 } = $props();
 	let inputEl = $state();
 
 	function uploadImages() {
@@ -57,9 +57,11 @@
 						class="thumb-preview {selectedIndex === i ? 'thumb-selected' : ''}"
 					/>
 				</label>
+				{#if items.length > minItems}
 				<button type="button" class="thumb-remove" onclick={() => removeImage(i)}>
 					<i class="fa-solid fa-x"></i>
 				</button>
+			{/if}
 			</div>
 		{/each}
 	</div>

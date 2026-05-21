@@ -4,6 +4,7 @@
 	import { doc, updateDoc } from 'firebase/firestore';
 	import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 	import ImagePicker from './ImagePicker.svelte';
+	import MachineFields from './MachineFields.svelte';
 
 	const COMPRESSION_OPTIONS = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
 
@@ -11,6 +12,9 @@
 	let objectName = $state(postData.name);
 	let objectInfo = $state(postData.info);
 	let hasFabricated = $state(postData.hasFabricated);
+	let machineType = $state(postData.machineType ?? '');
+	let machineModel = $state(postData.machineModel ?? '');
+	let materials = $state(postData.materials ?? []);
 
 	const initialFileURLs = new Set(postData.files ?? []);
 	let items = $state((postData.files ?? []).map((url) => ({ url, file: null })));
@@ -36,6 +40,9 @@
 				name: objectName,
 				info: objectInfo,
 				hasFabricated: hasFabricated,
+				machineType: hasFabricated === 'yes' ? (machineType || null) : null,
+				machineModel: hasFabricated === 'yes' ? (machineModel || null) : null,
+				materials: hasFabricated === 'yes' ? (materials.length ? materials : null) : null,
 				modified: new Date()
 			};
 
@@ -64,7 +71,7 @@
 
 			await updateDoc(docRef, updates);
 			displayShareScreen = false;
-			if (onSaved) onSaved({ files: updates.files, thumbnail: updates.thumbnail });
+			if (onSaved) onSaved(updates);
 		} catch (err) {
 			alert(err);
 		}
@@ -94,15 +101,9 @@
 			placeholder="Tell everyone about what you made!"
 			required
 		></textarea>
-		<label>Have you tried physically making this?</label>
-		<div class="made">
-			<input bind:group={hasFabricated} name="share-hasFabricated" type="radio" id="share-yes" value="yes" />
-			<label for="share-yes">Yes</label><br />
-			<input bind:group={hasFabricated} name="share-hasFabricated" type="radio" id="share-no" value="no" />
-			<label for="share-no">No</label>
-		</div>
+		<MachineFields bind:hasFabricated bind:machineType bind:machineModel bind:materials namePrefix="share-" />
 		<label>Images</label>
-		<ImagePicker bind:items bind:selectedIndex />
+		<ImagePicker bind:items bind:selectedIndex minItems={1} />
 		<div class="submit">
 			<button onclick={saveEdit} type="submit" class="sign-up">Save</button>
 		</div>
@@ -115,10 +116,6 @@
 		font-size: 0.8em;
 	}
 
-	input[type='radio'] {
-		accent-color: black;
-	}
-
 	textarea {
 		width: 100%;
 		font-size: 0.8em;
@@ -128,10 +125,6 @@
 	label {
 		font-size: 12px;
 		padding-bottom: 50px;
-	}
-
-	.made {
-		padding-bottom: 20px;
 	}
 
 	.submit {

@@ -92,19 +92,29 @@
 	}
 
 	async function updateSavedSketch() {
-		// Update post
-		const docRef = doc(db, 'posts', editorState.currentObjectID);
-		const modifiedTime = new Date();
-		await updateDoc(docRef, {
-			code: editorState.globalSketch,
-			name: editorState.projectTitle,
-			modified: modifiedTime
-		});
-
-		editorState.saveText = 'saved';
-		const saveButton = document.getElementById('sketchSaveBtn');
-		saveButton.disabled = true;
-		editorState.saved = true;
+		try {
+			const docRef = doc(db, 'posts', editorState.currentObjectID);
+			const modifiedTime = new Date();
+			await updateDoc(docRef, {
+				code: editorState.globalSketch,
+				name: editorState.projectTitle,
+				modified: modifiedTime
+			});
+			editorState.saveText = 'saved';
+			const saveButton = document.getElementById('sketchSaveBtn');
+			saveButton.disabled = true;
+			editorState.saved = true;
+		} catch (err) {
+			if (err.code === 'not-found') {
+				// Document was deleted externally; reset so user can re-post
+				editorState.savedSketchData = { new: true };
+				editorState.currentObjectID = null;
+				editorState.saved = false;
+				editorState.displaySaveScreen = true;
+			} else {
+				alert('Failed to save: ' + err.message);
+			}
+		}
 	}
 
 	$effect(() => {
@@ -150,6 +160,9 @@
 					<a href="/explore" target="_blank" class:active={page.url.pathname == '/explore'}
 						>Explore</a
 					>
+					{#if !isNewSketch}
+						<a href="/fabs/{editorState.currentObjectID}" target="_blank">View Project Page</a>
+					{/if}
 				</div>
 			</div>
 			<div class="menu-item">
