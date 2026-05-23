@@ -318,6 +318,7 @@
 
 	class Fab {
 		constructor(config = defaultPrinterSettings) {
+			pixelDensity(2);
 			this.configure(config);
 			if (navigator.serial) {
 				this.setupSerialConnection();
@@ -336,6 +337,7 @@
 			// Rendering info
 			this.vertices = [];
 			this.model = '';
+			this.lineWeight = 1.5;
 			this._parseGeneration = 0;
 			this._parsingGcode = false;
 			this.camera = createCamera();
@@ -829,6 +831,7 @@
 				this.camera = createCamera();
 				this._needsCameraReInit = false;
 			}
+			perspective(PI / 3, width / height, 0.1, 10000);
 			if (this.coordinateSystem == 'delta') {
 				this.drawDeltaPrinter();
 			} else {
@@ -836,34 +839,33 @@
 			}
 
 			if (this._parsingGcode) {
-				if (this.model) model(this.model);
-			} else if (!this.model) {
-				var toolpathPos = new p5.Vector(0, 0, 0);
-				beginShape(LINES);
-				for (let v in this.vertices) {
-					v = parseInt(v);
-					var vertexData = this.vertices[v];
-					if (vertexData.command == 'G0') {
-						toolpathPos = toolpathPos.set([
-							vertexData.vertex.x,
-							vertexData.vertex.y,
-							vertexData.vertex.z
-						]);
-						continue;
-					} else if (vertexData.command == 'G1') {
-						stroke(0);
-						vertex(toolpathPos.x, toolpathPos.y, toolpathPos.z);
-						vertex(vertexData.vertex.x, vertexData.vertex.y, vertexData.vertex.z);
-						toolpathPos = toolpathPos.set([
-							vertexData.vertex.x,
-							vertexData.vertex.y,
-							vertexData.vertex.z
-						]);
-					}
+				if (this.model) {
+					stroke(0);
+					strokeWeight(this.lineWeight);
+					model(this.model);
 				}
-				endShape();
-				this.model = saveShape();
+			} else if (!this.model) {
+				const _verts = this.vertices;
+				const _lw = this.lineWeight;
+				this.model = buildGeometry(() => {
+					stroke(0);
+					strokeWeight(_lw);
+					noFill();
+					let pos = createVector(0, 0, 0);
+					for (let v in _verts) {
+						v = parseInt(v);
+						const vd = _verts[v];
+						if (vd.command === 'G1') {
+							line(pos.x, pos.y, pos.z, vd.vertex.x, vd.vertex.y, vd.vertex.z);
+						}
+						if (vd.command === 'G0' || vd.command === 'G1') {
+							pos.set(vd.vertex.x, vd.vertex.y, vd.vertex.z);
+						}
+					}
+				});
 			} else {
+				stroke(0);
+				strokeWeight(this.lineWeight);
 				model(this.model);
 			}
 			pop();
@@ -940,7 +942,7 @@
 		}
 
 		drawCartesianPrinter() {
-			orbitControl(2, 2, 0.1);
+			orbitControl(2, 2, 1);
 
 			translate(-this.maxX / 2, 0.25 * this.maxZ, -this.maxY / 2);
 			rotateY(PI);
@@ -968,7 +970,7 @@
 		}
 
 		drawDeltaPrinter() {
-			orbitControl(2, 2, 0.1);
+			orbitControl(2, 2, 1);
 
 			translate(-this.radius, 0, -this.radius);
 			rotateY(PI);
