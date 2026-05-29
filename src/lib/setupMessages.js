@@ -2,6 +2,24 @@ import { editorState } from '../store/state.svelte.js';
 import { setOutput } from '$lib/repl.js';
 import { highlightErrorLine } from '$lib/errorHighlight.js';
 
+/**
+ * Messages received from the sketch iframe (p5.fab.js → parent editor):
+ *
+ * ready            — iframe has loaded; no body
+ * parsing_start    — G-code parsing begun; no body
+ * parsing_complete — G-code parsing done; no body
+ * error            — { body: string, line?: number }
+ * output           — { body: string }
+ * debug            — { body: any }
+ * fab_config       — full batch on setPrinter: { nozzleDiameter, filamentDiameter, maxX, maxY, maxZ }
+ *                    single-property change:   { property: string, value: any }
+ * fab_status       — { event: 'connection',     connected: boolean }
+ *                    { event: 'print_start' }
+ *                    { event: 'print_complete' }
+ *                    { event: 'print_error',    reason: 'already_printing'|'no_commands' }
+ *                    { event: 'temp',           nozzle?: number, bed?: number }
+ *                    { event: 'position',       x?: number, y?: number, z?: number }
+ */
 export function setupMessages() {
     // Setup messages with iframe
     window.addEventListener('message', function (e) {
@@ -49,6 +67,14 @@ export function setupMessages() {
     function messageFabStatus(body) {
         if (body.event === 'connection') {
             editorState.machineStatus.connected = body.connected;
+            if (!body.connected) {
+                editorState.machineStatus.nozzleTemp = null;
+                editorState.machineStatus.bedTemp = null;
+                editorState.machineStatus.x = null;
+                editorState.machineStatus.y = null;
+                editorState.machineStatus.z = null;
+                editorState.machineStatus.isPrinting = false;
+            }
         } else if (body.event === 'print_start') {
             editorState.machineStatus.isPrinting = true;
         } else if (body.event === 'print_complete') {

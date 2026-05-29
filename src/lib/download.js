@@ -17,17 +17,17 @@ export function downloadSketch() {
 
 export async function doGcodeDownload() {
 	const iframe = document.getElementById('preview');
-	const commands = await new Promise((resolve) => {
+	const gcode = await new Promise((resolve) => {
 		function handler(e) {
 			if (e.source !== iframe.contentWindow) return;
 			if (e.data?.type !== 'gcode_data') return;
 			window.removeEventListener('message', handler);
-			resolve(e.data.commands);
+			resolve(e.data.gcode);
 		}
 		window.addEventListener('message', handler);
 		iframe.contentWindow.postMessage({ type: 'get_gcode' }, '*');
 	});
-	triggerDownload((commands || []).join('\n'), editorState.projectTitle + '.gcode', 'text/plain');
+	triggerDownload(gcode || '', editorState.projectTitle + '.gcode', 'text/plain');
 }
 
 export function downloadGcode() {

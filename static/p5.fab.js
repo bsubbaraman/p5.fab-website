@@ -18,34 +18,87 @@
 	const moveCommands = ['G0', 'G1', 'G2', 'G3'];
 
 	/**
-	 * Creates and returns the global `fab` object. Call this once in `setup()`.
+	 * Explicitly initializes the global `fab` object and returns it.
 	 *
-	 * Calling it multiple times returns the same
-	 * instance, preserving any open serial connection across hot-reloads.
-	 *
-	 * **Hot-reload behavior:** In the copypastes.xyz editor, `setup()` re-runs
-	 * every time you run your sketch. This means changes to `setup()` (e.g.
-	 * `setPrinter()`, canvas size) take effect immediately. However, avoid
-	 * creating p5.js DOM elements (`createButton()`, `createSlider()`, etc.) in
-	 * `setup()`: they will be duplicated on each run.
-	 *
+	 * `createFab()` is optional: `fab` is created automatically before `setup()` runs.
+	 * Calling it multiple times returns the same instance, preserving any open
+	 * serial connection across reloads.
 	 * @memberof Fab
+	 * @group Setup
 	 * @returns {Fab} The global fab instance.
 	 * @example
 	 * function setup() {
+	 *   createCanvas(windowWidth, windowHeight, WEBGL);
 	 *   fab = createFab();
+	 * }
+	 *
+	 * function fabDraw() {
+	 *   fab.autoHome();
+	 *   fab.setTemps(200, 60);
+	 *   const diameter = 50;
+	 *   fab.circle(fab.centerX, fab.centerY, 0, diameter);
+	 * }
+	 *
+	 * function draw() {
+	 *   background(255);
+	 *   fab.render();
+	 * }
+	 *
+	 * @example
+	 * function setup() {
+	 *   createCanvas(windowWidth, windowHeight, WEBGL);
+	 *   // You can omit createFab()
+	 *   // The fab object will be created automatically before setup() runs
 	 *   fab.setPrinter('ender3');
+	 * }
+	 *
+	 * function fabDraw() {
+	 *
+	 * }
+	 *
+	 * function draw() {
+	 *   background(255);
+	 *   fab.render();
+	 * }
+	 *
+	 * @example
+	 * // You can name your fab object something else, if you want!
+	 * let myMachine;
+	 *
+	 * function setup() {
+	 *   createCanvas(windowWidth, windowHeight, WEBGL);
+	 *   myMachine = createFab();
+	 * }
+	 *
+	 * function fabDraw() {
+	 *   myMachine.autoHome();
+	 *   myMachine.setTemps(200, 60);
+	 *   const diameter = 50;
+	 *   myMachine.circle(fab.centerX, fab.centerY, 0, 50);
+	 * }
+	 *
+	 * function draw() {
+	 *   background(255);
+	 *   myMachine.render();
 	 * }
 	 */
 	p5.prototype.createFab = function () {
 		if (!_fab) {
 			_fab = new Fab();
-		} else {
-			// Camera flags are set by the createCanvas override in repl.js only when needed.
 		}
 		global.fab = new Proxy(_fab, fabValidationHandler);
+		_fab._initCamera();
 		return global.fab;
 	};
+
+	// Create fab before setup() so `fab` is always defined when user code runs.
+	// Camera init is deferred to _initCamera() since WEBGL doesn't exist yet here.
+	p5.prototype.registerMethod('beforeSetup', function () {
+		if (!_fab) {
+			_fab = new Fab();
+			global.fab = new Proxy(_fab, fabValidationHandler);
+		}
+	});
 
 	p5.prototype.getSerial = function () {
 		return _fab.serial;
@@ -55,62 +108,25 @@
 		_fab.serial.on('open', () => _fab.print());
 	};
 
-	p5.RendererGL.prototype.saveShape = function () {
-		// Save shape as Geometry from immediate mode
-		// This may become easier in future p5 releases
-		// source: https://github.com/processing/p5.js/issues/5393#issuecomment-910100074
-		if (this.immediateMode.shapeMode !== 0x0000)
-			// POINTS
-			this._processVertices(...arguments);
-		this.isBezier = false;
-		this.isQuadratic = false;
-		this.isCurve = false;
-		this.immediateMode._bezierVertex.length = 0;
-		this.immediateMode._quadraticVertex.length = 0;
-		this.immediateMode._curveVertex.length = 0;
-
-		// Patch and return geometry
-		let g = this.immediateMode.geometry;
-		_savedShapesCounter++;
-
-		// Assign gid to cache buffer
-		g.gid = 'saved|' + _savedShapesCounter;
-
-		// Shadow this function to avoid losing edges when `model(...)` is called
-		g._makeTriangleEdges = function () {
-			return this;
-		};
-
-		// Assign a new geometry to immediateMode to avoid pointer aliasing
-		this.immediateMode.geometry = new p5.Geometry();
-
-		return g;
-	};
-
-	p5.prototype.saveShape = function () {
-		if (this._renderer.isP3D) {
-			return this._renderer.saveShape(...arguments);
-		} else {
-			_warn("Don't use saveShape in 2D mode.");
-		}
-	};
-
 	p5.prototype.reloadSketch = function () {
 		if (!_fab) {
-			_warn('p5.fab: fab = createFab() was not called in setup(). Creating fab automatically.');
 			_fab = new Fab();
 			global.fab = new Proxy(_fab, fabValidationHandler);
-		} else {
-			// Re-run: camera flags are set by the createCanvas override in repl.js
-			// only when the canvas is actually recreated. Nothing to do here.
 		}
+		_fab._initCamera();
 		if (typeof fabDraw === 'function') {
 			_fab.lastAsyncPosition = new XYZEFC();
-			_fab.plannedPosition = new XYZEFC();
+			_fab._plannedPosition = new XYZEFC();
+			_fab._extrusionMultiplier = _fab._defaultExtrusionMultiplier;
+			_fab._retractAmount = _fab._defaultRetractAmount;
+			_fab._zHopHeight = _fab._defaultZHopHeight;
+			_fab._transformOffset = { x: 0, y: 0, z: 0 };
+			_fab._stateStack = [];
+			_fab._lastGcodePosition = { x: 0, y: 0, z: 0 };
 			setTimeout(() => {
 				window.parent.postMessage({ type: 'parsing_start' }, '*');
 				setTimeout(() => {
-					_fab.commands = [];
+					_fab._commands = [];
 					fabDraw();
 					_fab.parseGcodeAsync();
 					_fab.syncVizStream = true;
@@ -120,7 +136,7 @@
 	};
 
 	// Call reloadSketch once, immediately after setup and before first draw()
-	// predraw is called before every draw, so use _once to ensure we only run once
+	// predraw is called before every draw, so make sure its only run _once
 	p5.prototype.predraw = function () {
 		if (!_once) {
 			_once = true;
@@ -222,38 +238,91 @@
 		}
 	}
 
+	class GCodeCommand {
+		constructor(cmdString) {
+			this.raw = cmdString.trim();
+
+			const semiIdx = this.raw.indexOf(';');
+			const str = semiIdx > -1 ? this.raw.substring(0, semiIdx).trim() : this.raw;
+			this.comment = semiIdx > -1 ? this.raw.substring(semiIdx + 1).trim() : null;
+
+			const parts = str.split(/\s+/).filter(Boolean);
+			this.command = parts[0] ?? '';
+
+			this.fields = {};
+			for (let i = 1; i < parts.length; i++) {
+				const letter = parts[i][0].toUpperCase();
+				const value = parseFloat(parts[i].substring(1));
+				this.fields[letter] = isNaN(value) ? parts[i].substring(1) : value;
+			}
+
+			for (const [letter, value] of Object.entries(this.fields)) {
+				this[letter.toLowerCase()] = value;
+			}
+		}
+	}
+
 	//===================================
 	// Fab
-	// Defaults to Ender3-Pro
 	//===================================
-	// Printer presets — loaded eagerly from /printers/<name>.json at script startup.
+	// Printer presets are loaded eagerly from /printers/<name>.json at script startup.
 	// By the time a user runs a sketch these are guaranteed to be populated.
-	const printerPresets = {};
-	const _presetNames = ['ender3', 'prusa_mk3', 'jubilee'];
-	Promise.all(
-		_presetNames.map((name) =>
-			fetch(`/printers/${name}.json`)
-				.then((r) => r.json())
-				.then((config) => {
-					printerPresets[name] = config;
-				})
-				.catch((e) => _warn(`p5.fab: could not load preset "${name}"`, e))
-		)
-	);
+	const printerPresets = {
+		ender3: {
+			name: 'ender3',
+			baudRate: 115200,
+			nozzleDiameter: 0.8,
+			filamentDiameter: 1.75,
+			maxX: 220,
+			maxY: 220,
+			maxZ: 250,
+			extrusionMultiplier: 1,
+			retractAmount: 8,
+			zHopHeight: 0.2
+		},
+		prusa_mk3: {
+			name: 'prusa_mk3',
+			baudRate: 115200,
+			nozzleDiameter: 0.4,
+			filamentDiameter: 1.75,
+			maxX: 250,
+			maxY: 210,
+			maxZ: 210,
+			extrusionMultiplier: 1,
+			retractAmount: 8,
+			zHopHeight: 0.2
+		},
+		jubilee: {
+			name: 'jubilee',
+			baudRate: 250000,
+			nozzleDiameter: 0.4,
+			filamentDiameter: 1.75,
+			maxX: 300,
+			maxY: 300,
+			maxZ: 300,
+			extrusionMultiplier: 1,
+			retractAmount: 8,
+			zHopHeight: 0.2
+		}
+	};
 
 	const defaultPrinterSettings = {
-		name: 'ender3',
+		name: 'default',
 		baudRate: 115200,
 		nozzleDiameter: 0.8,
 		filamentDiameter: 1.75,
 		maxX: 220,
 		maxY: 220,
 		maxZ: 250,
+		extrusionMultiplier: 1,
+		retractAmount: 8,
+		zHopHeight: 0.2,
 		autoConnect: true
 	};
 
 	const FAB_PARAM_NAMES = Object.freeze({
-		// Drawing — v optional (printer uses last speed)
+		// Update these manually for the simple friendly error system
+		// Drawing — v optional
 		circle: ['x', 'y', 'z', 'd'],
 		// Absolute movement — v optional
 		moveTo: ['x', 'y', 'z'],
@@ -267,20 +336,31 @@
 		moveY: ['dy'],
 		moveZ: ['dz'],
 		// Absolute extrusion — e auto-calculated, v optional
-		moveExtrude: ['x', 'y', 'z'],
-		moveRetract: ['x', 'y', 'z'],
+		extrudeTo: ['x', 'y', 'z'],
+		retractTo: ['x', 'y', 'z'],
+		extrudeToX: ['x'],
+		extrudeToY: ['y'],
 		extrudeToXY: ['x', 'y'],
+		extrudeToZ: ['z'],
 		// Relative extrusion — e auto-calculated, v optional
+		extrude: ['dx', 'dy', 'dz'],
 		extrudeX: ['dx'],
 		extrudeXY: ['dx', 'dy'],
 		extrudeY: ['dy'],
 		extrudeZ: ['dz'],
 		// Config — these are the whole point of the call
+		// Relative retract travel
+		retractBy: ['dx', 'dy', 'dz'],
+		// Config — these are the whole point of the call
 		setTemps: ['tNozzle', 'tBed'],
-		setSpeed: ['v']
+		speed: ['v'],
+		retractAmount: ['mm'],
+		zHopHeight: ['mm']
 	});
 
 	const fabValidationHandler = {
+		// Simple 'Friendly Error System' a la p5 FES
+		// Uses FAB_PARAM_NAMES to give a bit of feedback
 		get(target, prop) {
 			const val = target[prop];
 			if (typeof val !== 'function' || !FAB_PARAM_NAMES[prop]) return val;
@@ -318,36 +398,62 @@
 
 	class Fab {
 		constructor(config = defaultPrinterSettings) {
-			pixelDensity(2);
 			this.configure(config);
-			if (navigator.serial) {
-				this.setupSerialConnection();
-			}
+			if (navigator.serial) this.setupSerialConnection();
 
-			// Setup machine properties and initial state
-			this.commands = []; // All commands to be sent to the machine
-			this.commandStream = []; // For streaming to the printer
+			// Command queue
+			this._commands = [];
+			this._commandStream = [];
+
+			// Motion state
 			this.lastAsyncPosition = new XYZEFC();
-			this.plannedPosition = new XYZEFC();
-			this.relativePositioning = false; // Position mode for XYZ; E is always relative
+			this._plannedPosition = new XYZEFC();
+			this._lastGcodePosition = { x: 0, y: 0, z: 0 };
+			this.relativePositioning = false;
 			this.reportedPos = {};
 			this.gotInitPosition = false;
-			this.isPrinting = false;
+			this._isPrinting = false;
 
-			// Rendering info
+			// Print parameters (reset to profile defaults each fabDraw)
+			this._extrusionMultiplier = 1;
+			this._defaultExtrusionMultiplier = 1;
+			this._retractAmount = 8;
+			this._defaultRetractAmount = 8;
+			this._zHopHeight = 0.2;
+			this._defaultZHopHeight = 0.2;
+
+			// Push/pop state
+			this._transformOffset = { x: 0, y: 0, z: 0 };
+			this._stateStack = [];
+
+			// Rendering (camera deferred to _initCamera — needs a WEBGL canvas)
 			this.vertices = [];
-			this.model = '';
+			this.model = null;
 			this.lineWeight = 1.5;
 			this._parseGeneration = 0;
 			this._parsingGcode = false;
-			this.camera = createCamera();
-			this.camera.setPosition(0, 0, 400);
-			this.cameraPosition = new p5.Vector(0, 0, 400);
-			this.cameraOrientation = new p5.Vector(0, 0, 0);
-			this.setCameraView('home'); // uses maxX/maxY/maxZ already set by configure()
-			this._needsCameraReInit = false;
 			this.syncVizStream = true;
 			this.tempQueryIntervalID = null;
+			this.camera = null;
+			this.cameraPosition = null;
+			this.cameraOrientation = null;
+			this._cameraInitialized = false;
+			this._needsCameraReInit = false;
+		}
+
+		_initCamera() {
+			if (this._cameraInitialized) return;
+			try {
+				pixelDensity(2);
+				this.camera = createCamera();
+				this.camera.setPosition(0, 0, 400);
+				this.cameraPosition = new p5.Vector(0, 0, 400);
+				this.cameraOrientation = new p5.Vector(0, 0, 0);
+				this.setCameraView('home');
+				this._cameraInitialized = true;
+			} catch (e) {
+				// WEBGL renderer not ready yet; will be called again from reloadSketch/predraw
+			}
 		}
 
 		//===================================
@@ -360,12 +466,18 @@
 			this.filamentDiameter = config.filamentDiameter;
 			this.baudRate = config.baudRate;
 			this.autoConnect = config.autoConnect;
+			this._extrusionMultiplier = config.extrusionMultiplier;
+			this._defaultExtrusionMultiplier = config.extrusionMultiplier;
+			this._retractAmount = config.retractAmount;
+			this._defaultRetractAmount = config.retractAmount;
+			this._zHopHeight = config.zHopHeight;
+			this._defaultZHopHeight = config.zHopHeight;
 			this.maxZ = config.maxZ;
 			if (config.coordinateSystem == 'delta') {
 				this._maxX = (2 * config.radius) / sqrt(2);
 				this._maxY = this._maxX;
-				this.centerX = 0;
-				this.centerY = 0;
+				this._centerX = 0;
+				this._centerY = 0;
 			} else {
 				this.maxX = config.maxX;
 				this.maxY = config.maxY;
@@ -379,64 +491,434 @@
 				nozzleDiameter: this._nozzleDiameter,
 				filamentDiameter: this._filamentDiameter
 			};
-			console.debug('FAB_CONFIG', messageData);
+
 			window.parent.postMessage({ type: 'fab_config', body: messageData }, '*');
 			if (this.cameraPosition) {
 				this.setCameraView('home');
 			}
 		}
 
+		/**
+		 * The printer's nozzle diameter in mm. Used to calculate extrusion amounts automatically.
+		 *
+		 * You can configure the nozzle diameter via `setPrinter()`
+		 * or directly to override the preset.
+		 * @type {number}
+		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   fab.setPrinter('ender3', { nozzleDiameter: 0.5 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *   const lineLength = 100;
+		 *
+		 *   fab.retractTo(50, 50, 0);
+		 *   fab.extrudeX(lineLength);
+		 *   let lastCmd = fab.commands.at(-1);
+		 *   console.log(`Extruding ${lastCmd.e}mm with a ${fab.nozzleDiameter}mm nozzle`);
+		 *
+		 *   // Change nozzle diameter and extrude another line
+		 *   fab.nozzleDiameter = 1.0;
+		 *   fab.retractTo(50, 100, 0);
+		 *   fab.extrudeX(lineLength);
+		 *   lastCmd = fab.commands.at(-1);
+		 *   console.log(`Extruding ${lastCmd.e}mm with a ${fab.nozzleDiameter}mm nozzle`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		get nozzleDiameter() {
+			return this._nozzleDiameter;
+		}
+
 		set nozzleDiameter(d) {
 			this._nozzleDiameter = d;
-			var messageData = {
-				property: 'nozzleDiameter',
-				value: this._nozzleDiameter
-			};
-			console.debug('FAB_CONFIG_CHANGE', messageData);
-			window.parent.postMessage({ type: 'fab_config', body: messageData }, '*');
+			window.parent.postMessage(
+				{ type: 'fab_config', body: { property: 'nozzleDiameter', value: d } },
+				'*'
+			);
+		}
+
+		/**
+		 * The filament diameter in mm. Used to calculate extrusion amounts automatically.
+		 * Set via `setPrinter()` or assign directly to override the preset.
+		 * @type {number}
+		 * @group Configuration
+		 */
+		get filamentDiameter() {
+			return this._filamentDiameter;
 		}
 
 		set filamentDiameter(d) {
 			this._filamentDiameter = d;
-			var messageData = {
-				property: 'filamentDiameter',
-				value: this._filamentDiameter
-			};
-			console.debug('FAB_CONFIG_CHANGE', messageData);
-			window.parent.postMessage({ type: 'fab_config', body: messageData }, '*');
+			window.parent.postMessage(
+				{ type: 'fab_config', body: { property: 'filamentDiameter', value: d } },
+				'*'
+			);
 		}
 
 		set maxX(v) {
 			this._maxX = v;
-			this.centerX = v / 2;
-			console.debug('FAB_CONFIG_CHANGE', { property: 'maxX', value: v });
+			this._centerX = v / 2;
 			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxX', value: v } }, '*');
 		}
+		/**
+		 * The maximum X travel distance of the printer in mm.
+		 * Set by the printer profile; assign directly to override.
+		 * @type {number}
+		 * @group Utilities
+		 */
 		get maxX() {
 			return this._maxX;
 		}
 
 		set maxY(v) {
 			this._maxY = v;
-			this.centerY = v / 2;
-			console.debug('FAB_CONFIG_CHANGE', { property: 'maxY', value: v });
+			this._centerY = v / 2;
 			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxY', value: v } }, '*');
 		}
+		/**
+		 * The maximum Y travel distance of the printer in mm.
+		 * Set by the printer profile; assign directly to override.
+		 * @type {number}
+		 * @group Utilities
+		 */
 		get maxY() {
 			return this._maxY;
 		}
 
 		set maxZ(v) {
 			this._maxZ = v;
-			console.debug('FAB_CONFIG_CHANGE', { property: 'maxZ', value: v });
 			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxZ', value: v } }, '*');
 		}
+		/**
+		 * The maximum Z travel distance of the printer in mm.
+		 * Set by the printer profile; assign directly to override.
+		 * @type {number}
+		 * @group Utilities
+		 */
 		get maxZ() {
 			return this._maxZ;
 		}
 
 		/**
+		 * The X center of the build plate in mm (`maxX / 2`). Useful for centering prints.
+		 * @readonly
+		 * @type {number}
+		 * @group Utilities
+		 */
+		get centerX() {
+			return this._centerX;
+		}
+
+		/**
+		 * The Y center of the build plate in mm (`maxY / 2`). Useful for centering prints.
+		 * @readonly
+		 * @type {number}
+		 * @group Utilities
+		 */
+		get centerY() {
+			return this._centerY;
+		}
+
+		/**
+		 * Current planned X position in mm (local coordinates, before any `translate` offset).
+		 * @readonly
+		 * @type {number}
+		 * @group Utilities
+		 */
+		get x() {
+			return this._plannedPosition.x;
+		}
+
+		/**
+		 * Current planned Y position in mm (local coordinates, before any `translate` offset).
+		 * @readonly
+		 * @type {number}
+		 * @group Utilities
+		 */
+		get y() {
+			return this._plannedPosition.y;
+		}
+
+		/**
+		 * Current planned Z position in mm (local coordinates, before any `translate` offset).
+		 * @readonly
+		 * @type {number}
+		 * @group Utilities
+		 */
+		get z() {
+			return this._plannedPosition.z;
+		}
+
+		/**
+		 * Whether a print is currently in progress.
+		 * Useful inside `draw()` to update a visualization or UI while printing.
+		 * @readonly
+		 * @type {boolean}
+		 * @group Utilities
+		 */
+		get isPrinting() {
+			return this._isPrinting;
+		}
+
+		/**
+		 * The GCode commands generated by the most recent fabDraw() call, as structured objects. Each entry has `.command` (e.g. 'G1', 'M104'), `.fields` (all parameters as a map), and direct lowercase field access (`.x`, `.s`, `.f`, etc.). Cleared and rebuilt each time fabDraw() runs.
+		 *
+		 * A line of GCode consists of fields that are separated by spaces.
+		 * A field can be interpreted as a command, a parameter, or some custom purpose. It typically consists of a letter directly followed by a number. For example, `G1` is a linear move command. For a comprehensive overview of GCode commands, see {@link https://marlinfw.org/meta/gcode/ Marlin's GCode dictionary}.
+		 *
+		 * @property {string} raw - The original unparsed command string.
+		 * @property {string} command - The command code, e.g. `'G1'`, `'M104'`.
+		 * @property {Object.<string, number|string>} fields - All parameter fields keyed by
+		 *   uppercase letter, e.g. `{ X: 100, Y: 50, E: 0.45, F: 2400 }`.
+		 * @property {string|null} comment - Inline comment text after `;`, or `null`.
+		 *
+		 * Field values are also accessible as direct lowercase properties:
+		 * `cmd.x`, `cmd.s`, `cmd.f`, etc. — `undefined` if the field is absent.
+		 * G-code commands generated by the most recent `fabDraw()` call, as structured objects.
+		 * Each entry has `.command` (e.g. `'G1'`, `'M104'`), `.fields` (all parameters as a map),
+		 * and direct lowercase field access (`.x`, `.s`, `.f`, etc.).
+		 * Cleared and rebuilt each time `fabDraw()` runs.
+		 * @readonly
+		 * @type {GCodeCommand[]}
+		 * @group Utilities
+		 */
+		get commands() {
+			return this._commands.map((s) => new GCodeCommand(s));
+		}
+
+		/**
+		 * All generated G-code as a single newline-separated string.
+		 * Useful for downloading or logging the full output of `fabDraw()`.
+		 * @readonly
+		 * @type {string}
+		 * @group Utilities
+		 */
+		get gcode() {
+			return this._commands.join('\n');
+		}
+
+		/**
+		 * Set the extrusion multiplier applied to all subsequent auto-calculated extrusion amounts.
+		 * Works like `strokeWeight` in p5.js — set once and it applies to all moves until changed.
+		 * Automatically resets to the printer's default value at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} value - Multiplier value (e.g. `1.2` for 20% over-extrusion, `0.8` for bridging).
+		 * @example
+		 * function fabDraw() {
+		 *   fab.moveTo(0, 0, 0.2, 1500);
+		 *   fab.extrusionMultiplier(1.2);  // over-extrude first layer
+		 *   fab.extrudeTo(100, 0, 0.2, 1500);
+		 *   fab.extrusionMultiplier(1);    // reset to normal
+		 *   fab.extrudeTo(100, 100, 0.2, 1500);
+		 * }
+		 */
+		extrusionMultiplier(value) {
+			this._extrusionMultiplier = value;
+		}
+
+		/**
+		 * Set the filament retraction distance for `retractTo()` and `retractBy()`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} mm - Retraction distance in mm.
+		 */
+		retractAmount(mm) {
+			this._retractAmount = mm;
+		}
+
+		/**
+		 * Set the z-hop height for `retractTo()` and `retractBy()`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} mm - Z-hop height in mm.
+		 */
+		zHopHeight(mm) {
+			this._zHopHeight = mm;
+		}
+
+		/**
+		 * Begins a command group that contains its own printing state.
+		 *
+		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `speed()`) and
+		 * transformations (e.g., `translate()`) apply to all subsequent commands. `push()` and `pop()`
+		 * can be used to constrain the effect of print parameters and transformations to a specific group
+		 * of commands. The functionality follows `push()` and `pop()` in p5.js.
+		 *
+		 * `push()` and `pop()` contain the effects of the following functions:
+		 *
+		 * <ul>
+		 * <li>`extrusionMultiplier()`</li>
+		 * <li>`speed()`</li>
+		 * <li>`translate()`</li>
+		 * <li>`retractAmount()`</li>
+		 * <li>`zHopHeight()`</li>
+		 * </ul>
+		 *
+		 * @group Structure
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   fab.speed(50);
+		 *   const firstLayerHeight = 0.2;
+		 *   const diameter = 50;
+		 *
+		 *   // Draw a circle on the left side of the bed
+		 *   fab.circle(fab.maxX/3, fab.centerY, firstLayerHeight, diameter);
+		 *
+		 *   // Begin a group of commands with different parameters
+		 *   fab.push();
+		 *
+		 *   // Translate to the center of the bed
+		 *   fab.translate(fab.centerX, fab.centerY);
+		 *
+		 *   // Set new printing parameters
+		 *   fab.speed(20);
+		 *   fab.extrusionMultiplier(2);
+		 *
+		 *   // Draw a circle using the slower speed and higher extrusion
+		 *   fab.circle(0, 0, firstLayerHeight, diameter);
+		 *
+		 *   // Restore parameters
+		 *   fab.pop();
+		 *
+		 *   // Print a circle on the right side of the bed
+		 *   fab.circle(2*fab.maxX/3, fab.centerY, firstLayerHeight, diameter);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		push() {
+			this._stateStack.push({
+				extrusionMultiplier: this._extrusionMultiplier,
+				feedrate: this._plannedPosition.f,
+				transformOffset: { ...this._transformOffset },
+				retractAmount: this._retractAmount,
+				zHopHeight: this._zHopHeight
+			});
+		}
+
+		/**
+		 * Ends a command group that contains its own printing state.
+		 *
+		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `speed()`) and
+		 * transformations (e.g., `translate()`) apply to all subsequent commands. `push()` and `pop()`
+		 * can be used to constrain the effect of print parameters and transformations to a specific group
+		 * of commands. The functionality follows `push()` and `pop()` in p5.js.
+		 *
+		 * `push()` and `pop()` contain the effects of the following functions:
+		 *
+		 * <ul>
+		 * <li>`extrusionMultiplier()`</li>
+		 * <li>`speed()`</li>
+		 * <li>`translate()`</li>
+		 * <li>`retractAmount()`</li>
+		 * <li>`zHopHeight()`</li>
+		 * </ul>
+		 *
+		 * @group Structure
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   fab.speed(50);
+		 *   const firstLayerHeight = 0.2;
+		 *   const diameter = 50;
+		 *
+		 *   // Draw a circle on the left side of the bed
+		 *   fab.circle(fab.maxX/3, fab.centerY, firstLayerHeight, diameter);
+		 *
+		 *   // Begin a group of commands with different parameters
+		 *   fab.push();
+		 *
+		 *   // Translate to the center of the bed
+		 *   fab.translate(fab.centerX, fab.centerY);
+		 *
+		 *   // Set new printing parameters
+		 *   fab.speed(20);
+		 *   fab.extrusionMultiplier(2);
+		 *
+		 *   // Draw a circle using the slower speed and higher extrusion
+		 *   fab.circle(0, 0, firstLayerHeight, diameter);
+		 *
+		 *   // Restore parameters
+		 *   fab.pop();
+		 *
+		 *   // Print a circle on the right side of the bed
+		 *   fab.circle(2*fab.maxX/3, fab.centerY, firstLayerHeight, diameter);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		pop() {
+			const state = this._stateStack.pop();
+			if (!state) return;
+			this._extrusionMultiplier = state.extrusionMultiplier;
+			this._transformOffset = state.transformOffset;
+			this._retractAmount = state.retractAmount;
+			this._zHopHeight = state.zHopHeight;
+			if (parseFloat(this._plannedPosition.f) !== parseFloat(state.feedrate)) {
+				this.speed(parseFloat(state.feedrate) / 60.0);
+			}
+		}
+
+		/**
+		 * Offset the coordinate origin for all subsequent moves by `(dx, dy, dz)`.
+		 * Offsets accumulate — a second `translate` adds to the first.
+		 * Use `push()` / `pop()` to scope a translation to a specific region.
+		 * @group Motion
+		 * @param {number} dx - X offset in mm.
+		 * @param {number} dy - Y offset in mm.
+		 * @param {number} [dz=0] - Z offset in mm.
+		 * @example
+		 * function fabDraw() {
+		 *   for (let i = 0; i < 3; i++) {
+		 *     fab.push();
+		 *     fab.translate(i * 60, 0);
+		 *     fab.moveTo(0, 0, 0.2, 3000);
+		 *     fab.extrudeTo(50, 0, 0.2, 1500);
+		 *     fab.extrudeTo(50, 50, 0.2, 1500);
+		 *     fab.extrudeTo(0, 50, 0.2, 1500);
+		 *     fab.extrudeTo(0, 0, 0.2, 1500);
+		 *     fab.pop();
+		 *   }
+		 * }
+		 */
+		translate(dx, dy, dz = 0) {
+			this._transformOffset.x += parseFloat(dx);
+			this._transformOffset.y += parseFloat(dy);
+			this._transformOffset.z += parseFloat(dz);
+		}
+
+		/**
 		 * Configure the fab instance for a specific printer preset, with optional overrides.
+		 * @group Setup
 		 * @param {string} name - Printer preset name (e.g. `'ender3'`, `'prusa'`).
 		 * @param {Object} [overrides={}] - Optional settings to override the preset (e.g. `{ nozzleDiameter: 0.4 }`).
 		 * @example
@@ -448,7 +930,7 @@
 		setPrinter(name, overrides = {}) {
 			const preset = printerPresets[name];
 			if (!preset) {
-				const available = Object.keys(printerPresets).join(', ') || 'none loaded yet';
+				const available = Object.keys(printerPresets).join(', ');
 				window.parent.postMessage(
 					{
 						type: 'output',
@@ -521,7 +1003,7 @@
 		}
 
 		enqueue(cmd) {
-			this.commands.push(cmd);
+			this._commands.push(cmd);
 		}
 
 		print() {
@@ -535,7 +1017,7 @@
 				);
 				return;
 			}
-			if (this.commands.length === 0) {
+			if (this._commands.length === 0) {
 				window.parent.postMessage(
 					{
 						type: 'fab_status',
@@ -546,33 +1028,34 @@
 				return;
 			}
 			if (this.syncVizStream) {
-				this.commandStream = this.commands;
+				this._commandStream = this._commands.slice();
 				this.syncVizStream = false;
 			}
 
-			if (this.commandStream.length > 0) {
-				this.isPrinting = true;
+			if (this._commandStream.length > 0) {
+				this._isPrinting = true;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_start' } }, '*');
-				const cmd = this.commandStream[0];
+				const cmd = this._commandStream[0];
 				this.serial.write(cmd + '\n');
 				this._postPositionFromCmd(cmd);
-				this.commandStream.shift();
+				this._commandStream.shift();
 			} else {
-				this.isPrinting = false;
+				this._isPrinting = false;
+				this.syncVizStream = true;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			}
 		}
 
 		printStream() {
 			// TODO: Do I need print() and printStream()?
-			if (this.commandStream.length > 0) {
-				this.isPrinting = true;
-				const cmd = this.commandStream[0];
+			if (this._commandStream.length > 0) {
+				this._isPrinting = true;
+				const cmd = this._commandStream[0];
 				this.serial.write(cmd + '\n');
 				this._postPositionFromCmd(cmd);
-				this.commandStream.shift();
+				this._commandStream.shift();
 			} else {
-				this.isPrinting = false;
+				this._isPrinting = false;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			}
 		}
@@ -657,9 +1140,9 @@
 			});
 
 			if (!this.gotInitPosition) {
-				this.plannedPosition.x = this.reportedPos['X'];
-				this.plannedPosition.y = this.reportedPos['Y'];
-				this.plannedPosition.z = this.reportedPos['Z'];
+				this._plannedPosition.x = this.reportedPos['X'];
+				this._plannedPosition.y = this.reportedPos['Y'];
+				this._plannedPosition.z = this.reportedPos['Z'];
 				this.lastAsyncPosition.x = this.reportedPos['X'];
 				this.lastAsyncPosition.y = this.reportedPos['Y'];
 				this.lastAsyncPosition.z = this.reportedPos['Z'];
@@ -682,7 +1165,7 @@
 
 		parseGcode() {
 			this.vertices = [];
-			this.commands.forEach((cmd) => {
+			this._commands.forEach((cmd) => {
 				let fullcommand = cmd;
 				cmd = cmd.trim().split(' ');
 				var code = cmd[0].substring(0, 2);
@@ -757,7 +1240,7 @@
 			this._parsingGcode = true;
 			window.parent.postMessage({ type: 'parsing_start' }, '*');
 
-			const commands = this.commands.slice();
+			const commands = this._commands.slice();
 			const vertices = [];
 			const CHUNK = 1000;
 
@@ -820,6 +1303,7 @@
 
 		/**
 		 * Render a 3D preview of the planned toolpath. Call this inside a WEBGL p5.js `draw()` loop.
+		 * @group Utilities
 		 * @example
 		 * function draw() {
 		 *   background(255);
@@ -827,6 +1311,7 @@
 		 * }
 		 */
 		render() {
+			if (!this._cameraInitialized) return;
 			if (this._needsCameraReInit) {
 				this.camera = createCamera();
 				this._needsCameraReInit = false;
@@ -1002,6 +1487,7 @@
 		 */
 		/**
 		 * Home all axes and reset the extruder position.
+		 * @group Print control
 		 * @example
 		 * function fabDraw() {
 		 *   fab.autoHome();
@@ -1018,6 +1504,7 @@
 
 		/**
 		 * Set nozzle and bed temperatures and wait for both to be reached before continuing.
+		 * @group Temperature
 		 * @param {number} tNozzle - Target nozzle temperature in °C.
 		 * @param {number} tBed - Target bed temperature in °C.
 		 * @example
@@ -1044,6 +1531,7 @@
 
 		/**
 		 * Set the nozzle temperature and wait for it to be reached before continuing.
+		 * @group Temperature
 		 * @param {number} t - Target nozzle temperature in °C.
 		 */
 		setNozzleTemp(t) {
@@ -1054,6 +1542,7 @@
 
 		/**
 		 * Set the bed temperature and wait for it to be reached before continuing.
+		 * @group Temperature
 		 * @param {number} t - Target bed temperature in °C.
 		 */
 		setBedTemp(t) {
@@ -1090,6 +1579,7 @@
 
 		/**
 		 * Turn the part cooling fan on at full speed.
+		 * @group Print control
 		 */
 		fanOn() {
 			const cmd = 'M106';
@@ -1098,6 +1588,7 @@
 
 		/**
 		 * Turn the part cooling fan off.
+		 * @group Print control
 		 */
 		fanOff() {
 			const cmd = 'M107';
@@ -1106,19 +1597,21 @@
 
 		/**
 		 * Pause the print for a given duration.
+		 * @group Print control
 		 * @param {number|null} [t=null] - Duration in seconds. Defaults to 10s if not provided.
 		 */
 		pausePrint(t = null) {
 			const cmd = t ? `M1 S${t}` : 'M1 S10 this is a pause';
-			this.commandStream.unshift(cmd);
+			this._commandStream.unshift(cmd);
 		}
 
 		/**
 		 * Immediately stop the print and clear the command queue.
+		 * @group Print control
 		 */
 		stopPrint() {
-			this.commandStream = [];
-			this.isPrinting = false;
+			this._commandStream = [];
+			this._isPrinting = false;
 			fabDraw();
 		}
 
@@ -1130,6 +1623,7 @@
 
 		/**
 		 * Print a priming line along the left edge of the bed to prepare the extruder.
+		 * @group Print control
 		 * @param {number} [z=0.3] - Layer height for the intro line in mm.
 		 */
 		introLine(z = 0.3) {
@@ -1155,7 +1649,7 @@
 		}
 
 		setPos() {
-			const cmd = `G92 X${this.plannedPosition.x} Y${this.plannedPosition.y} Z${this.plannedPosition.z} E${this.plannedPosition.e}`;
+			const cmd = `G92 X${this._plannedPosition.x} Y${this._plannedPosition.y} Z${this._plannedPosition.z} E${this._plannedPosition.e}`;
 			this.enqueue(cmd);
 			return cmd;
 		}
@@ -1172,66 +1666,116 @@
 		// Path Commands
 		//===================================
 		updateAsyncPosition({ x = null, y = null, z = null, e = null, v = null, comment = '' } = {}) {
-			this.lastAsyncPosition = { ...this.plannedPosition };
+			this.lastAsyncPosition = { ...this._plannedPosition };
 			if (!this.relativePositioning) {
 				if (x !== null) {
-					this.plannedPosition.x = parseFloat(x).toFixed(2);
+					this._plannedPosition.x = parseFloat(x).toFixed(2);
 				}
 				if (y !== null) {
-					this.plannedPosition.y = parseFloat(y).toFixed(2);
+					this._plannedPosition.y = parseFloat(y).toFixed(2);
 				}
 				if (z !== null) {
-					this.plannedPosition.z = parseFloat(z).toFixed(2);
+					this._plannedPosition.z = parseFloat(z).toFixed(2);
 				}
 			} else {
 				if (x !== null) {
-					this.plannedPosition.x = (parseFloat(this.plannedPosition.x) + parseFloat(x)).toFixed(2);
+					this._plannedPosition.x = (parseFloat(this._plannedPosition.x) + parseFloat(x)).toFixed(
+						2
+					);
 				}
 				if (y !== null) {
-					this.plannedPosition.y = (parseFloat(this.plannedPosition.y) + parseFloat(y)).toFixed(2);
+					this._plannedPosition.y = (parseFloat(this._plannedPosition.y) + parseFloat(y)).toFixed(
+						2
+					);
 				}
 				if (z !== null) {
-					this.plannedPosition.z = (parseFloat(this.plannedPosition.z) + parseFloat(z)).toFixed(2);
+					this._plannedPosition.z = (parseFloat(this._plannedPosition.z) + parseFloat(z)).toFixed(
+						2
+					);
 				}
 			}
 
 			// E is relative
 			if (e) {
 				// CHANGED THIS TO toFixed(4) instead of 2
-				this.plannedPosition.e = parseFloat(e).toFixed(4);
+				this._plannedPosition.e = parseFloat(e).toFixed(4);
 			} else {
-				this.plannedPosition.e = 0;
+				this._plannedPosition.e = 0;
 			}
 
 			if (v) {
 				const f = this.mm_sec_to_mm_min(v);
-				this.plannedPosition.f = parseFloat(f).toFixed(2);
+				this._plannedPosition.f = parseFloat(f).toFixed(2);
 			}
 
 			if (comment) {
-				this.plannedPosition.c = `;${comment}`;
+				this._plannedPosition.c = `;${comment}`;
 			} else {
-				this.plannedPosition.c = '';
+				this._plannedPosition.c = '';
 			}
 		}
 
-		_moveXYZE({ x = null, y = null, z = null, e = null, v = null, comment = null } = {}) {
-			// Handle all movement commands. Set absolute/relative mode externally.
-			this.updateAsyncPosition({ x: x, y: y, z: z, e: e, v: v, comment: comment });
+		_moveXYZE({
+			x = null,
+			y = null,
+			z = null,
+			e = null,
+			isExtrude = false,
+			v = null,
+			comment = null
+		} = {}) {
+			this.updateAsyncPosition({ x, y, z, v, comment });
 
-			// Use G1 for extrude commands
-			var moveType = e ? 'G1' : 'G0';
+			// Apply transform offset to get actual G-code output coordinates.
+			// Null axes mean "don't move this axis" — use the last known physical position
+			// so that E-only or Z-only moves (retract, z-hop, prime) don't drag XY when
+			// a translate() offset is active.
+			const gcodeX =
+				x !== null
+					? (parseFloat(this._plannedPosition.x) + this._transformOffset.x).toFixed(2)
+					: this._lastGcodePosition.x.toFixed(2);
+			const gcodeY =
+				y !== null
+					? (parseFloat(this._plannedPosition.y) + this._transformOffset.y).toFixed(2)
+					: this._lastGcodePosition.y.toFixed(2);
+			const gcodeZ =
+				z !== null
+					? (parseFloat(this._plannedPosition.z) + this._transformOffset.z).toFixed(2)
+					: this._lastGcodePosition.z.toFixed(2);
 
-			// Always send aboslute position?
+			// Compute E from the physical distance traveled (gcode space), applying extrusionMultiplier.
+			// If the user passes an explicit e value, use it as-is (no multiplier applied).
+			if (isExtrude && e === null) {
+				const dist = sqrt(
+					(parseFloat(gcodeX) - this._lastGcodePosition.x) ** 2 +
+						(parseFloat(gcodeY) - this._lastGcodePosition.y) ** 2 +
+						(parseFloat(gcodeZ) - this._lastGcodePosition.z) ** 2
+				);
+				e = parseFloat(
+					(
+						dist *
+						(this._nozzleDiameter / 2 / (this._filamentDiameter / 2)) ** 2 *
+						this._extrusionMultiplier
+					).toFixed(4)
+				);
+			}
+
+			this._plannedPosition.e = e !== null ? parseFloat(e).toFixed(4) : 0;
+
+			this._lastGcodePosition.x = parseFloat(gcodeX);
+			this._lastGcodePosition.y = parseFloat(gcodeY);
+			this._lastGcodePosition.z = parseFloat(gcodeZ);
+
+			const moveType = isExtrude || e !== null ? 'G1' : 'G0';
 			this.setAbsolutePositionXYZ();
-			const cmd = `${moveType} X${this.plannedPosition.x} Y${this.plannedPosition.y} Z${this.plannedPosition.z} E${this.plannedPosition.e} F${this.plannedPosition.f} ${this.plannedPosition.c} `;
-
+			const cmd = `${moveType} X${gcodeX} Y${gcodeY} Z${gcodeZ} E${this._plannedPosition.e} F${this._plannedPosition.f} ${this._plannedPosition.c} `;
 			this.enqueue(cmd);
 			return cmd;
 		}
 
 		/**
 		 * Move to an absolute XYZ position without extruding.
+		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
@@ -1249,6 +1793,7 @@
 
 		/**
 		 * Move relative to the current position without extruding.
+		 * @group Motion
 		 * @param {number} dx - Distance to move in X in mm.
 		 * @param {number} dy - Distance to move in Y in mm.
 		 * @param {number} dz - Distance to move in Z in mm.
@@ -1265,21 +1810,27 @@
 
 		/**
 		 * Move to an absolute XYZ position while extruding filament.
-		 * Extrusion amount is calculated automatically from the move distance if not provided.
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`.
+		 * Pass an explicit `e` value in mm to override the auto-calculation entirely.
+		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
 		 * @example
 		 * function setup() {
 		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   fab = createFab();
+		 *   fab.setPrinter('ender3');
 		 * }
 		 *
 		 * function fabDraw() {
 		 *   fab.autoHome();
-		 *   fab.moveExtrude(100, 100, 0);
+		 *   fab.setTemps(200, 60);
+		 *   fab.moveTo(0, 0, 0.2, 1500);
+		 *   fab.extrudeTo(100, 0, 0.2, 1500);
+		 *   fab.extrudeTo(100, 100, 0.2, 1500);
 		 * }
 		 *
 		 * function draw() {
@@ -1287,43 +1838,104 @@
 		 *   fab.render();
 		 * }
 		 */
-		moveExtrude(x, y, z, v, e = null, multiplier = false) {
-			if (e == null) {
-				e = this.makeE(x, y, z);
-			} else if (multiplier) {
-				e = e * this.makeE(x, y, z);
-			}
-
+		extrudeTo(x, y, z, v, e = null) {
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ x: x, y: y, z: z, e: e, v: v });
+			this._moveXYZE({ x, y, z, e, isExtrude: true, v });
 		}
 
 		/**
-		 * Move to an absolute position with a filament retraction, z-hop, and re-prime.
+		 * Move a relative distance in XYZ while extruding filament.
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`.
+		 * Pass an explicit `e` value in mm to override the auto-calculation entirely.
+		 * @group Extrusion
+		 * @param {number} dx - Distance to move in X in mm.
+		 * @param {number} dy - Distance to move in Y in mm.
+		 * @param {number} dz - Distance to move in Z in mm.
+		 * @param {number} v - Feedrate in mm/min.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
+		 * @example
+		 * function fabDraw() {
+		 *   fab.moveTo(0, 0, 0.2, 1500);
+		 *   fab.extrude(100, 0, 0, 1500); // extrude 100mm in X
+		 *   fab.extrude(0, 100, 0, 1500); // extrude 100mm in Y
+		 * }
+		 */
+		extrude(dx, dy, dz, v, e = null) {
+			this.setRelativePosition();
+			this._moveXYZE({ x: dx, y: dy, z: dz, e, isExtrude: true, v });
+		}
+
+		/** @deprecated Use `extrudeTo()` instead. */
+		moveExtrude(x, y, z, v, e = null) {
+			window.parent.postMessage(
+				{ type: 'output', body: 'p5.fab: moveExtrude() is deprecated — use extrudeTo() instead.' },
+				'*'
+			);
+			this.extrudeTo(x, y, z, v, e);
+		}
+
+		/**
+		 * Travel to an absolute XYZ position with a filament retraction, z-hop, and re-prime.
 		 * Use this to travel between disconnected extrusion paths without stringing.
+		 * Retract distance and z-hop height are set by `retractAmount()` and `zHopHeight()`.
+		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number} [e=8] - Amount to retract/re-prime in mm.
 		 * @example
 		 * function fabDraw() {
-		 *   fab.moveExtrude(50, 50, 0.2, 1500);
-		 *   fab.moveRetract(100, 100, 0.2, 3000); // travel without stringing
-		 *   fab.moveExtrude(150, 50, 0.2, 1500);
+		 *   fab.extrudeTo(50, 50, 0.2, 1500);
+		 *   fab.retractTo(100, 100, 0.2, 3000); // travel without stringing
+		 *   fab.extrudeTo(150, 50, 0.2, 1500);
 		 * }
 		 */
-		moveRetract(x, y, z, v, e = 8) {
-			this.moveE(-1 * e);
-			this.moveZ(0.2);
+		retractTo(x, y, z, v) {
+			this.moveE(-1 * this._retractAmount);
+			this.moveZ(this._zHopHeight);
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ x: x, y: y, z: z, v: v });
-			this.prime(e);
-			this.moveZ(-0.2);
+			this._moveXYZE({ x, y, z, v });
+			this.prime(this._retractAmount);
+			this.moveZ(-this._zHopHeight);
+		}
+
+		/**
+		 * Travel a relative XYZ distance with a filament retraction, z-hop, and re-prime.
+		 * Use this to travel between disconnected extrusion paths without stringing.
+		 * Retract distance and z-hop height are set by `retractAmount()` and `zHopHeight()`.
+		 * @group Motion
+		 * @param {number} dx - Distance to move in X in mm.
+		 * @param {number} dy - Distance to move in Y in mm.
+		 * @param {number} dz - Distance to move in Z in mm.
+		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function fabDraw() {
+		 *   fab.extrudeTo(50, 50, 0.2, 1500);
+		 *   fab.retractBy(50, 50, 0, 3000); // travel 50mm in X and Y without stringing
+		 *   fab.extrudeTo(150, 50, 0.2, 1500);
+		 * }
+		 */
+		retractBy(dx, dy, dz, v) {
+			this.moveE(-1 * this._retractAmount);
+			this.moveZ(this._zHopHeight);
+			this.setRelativePosition();
+			this._moveXYZE({ x: dx, y: dy, z: dz, v });
+			this.prime(this._retractAmount);
+			this.moveZ(-this._zHopHeight);
+		}
+
+		/** @deprecated Use `retractTo()` instead. */
+		moveRetract(x, y, z, v, e = 8) {
+			window.parent.postMessage(
+				{ type: 'output', body: 'p5.fab: moveRetract() is deprecated — use retractTo() instead.' },
+				'*'
+			);
+			this.retractTo(x, y, z, v);
 		}
 
 		/**
 		 * Move to an absolute position with a 2mm z-hop over the travel path.
+		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
@@ -1342,6 +1954,7 @@
 
 		/**
 		 * Move to an absolute X position without extruding.
+		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -1352,6 +1965,7 @@
 
 		/**
 		 * Move to an absolute Y position without extruding.
+		 * @group Motion
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -1362,6 +1976,7 @@
 
 		/**
 		 * Move to an absolute Z position without extruding.
+		 * @group Motion
 		 * @param {number} z - Target Z position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -1372,6 +1987,7 @@
 
 		/**
 		 * Move the extruder to an absolute E position.
+		 * @group Motion
 		 * @param {number} e - Target E position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -1382,33 +1998,40 @@
 
 		/**
 		 * Move a relative distance in X without extruding.
+		 * @group Motion
 		 * @param {number} dx - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
 		moveX(dx, v) {
-			this.move(dx, 0, 0, v);
+			this.setRelativePosition();
+			this._moveXYZE({ x: dx, v });
 		}
 
 		/**
 		 * Move a relative distance in Y without extruding.
+		 * @group Motion
 		 * @param {number} dy - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
 		moveY(dy, v) {
-			this.move(0, dy, 0, v);
+			this.setRelativePosition();
+			this._moveXYZE({ y: dy, v });
 		}
 
 		/**
 		 * Move a relative distance in Z without extruding.
+		 * @group Motion
 		 * @param {number} dz - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
 		moveZ(dz, v) {
-			this.move(0, 0, dz, v);
+			this.setRelativePosition();
+			this._moveXYZE({ z: dz, v });
 		}
 
 		/**
 		 * Move the extruder a relative distance in E.
+		 * @group Motion
 		 * @param {number} de - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -1419,260 +2042,165 @@
 
 		/**
 		 * Move a relative distance in X while extruding.
+		 * @group Extrusion
 		 * @param {number} dx - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 * @example
 		 * function fabDraw() {
 		 *   fab.extrudeX(50, 1500); // extrude a 50mm line in X
 		 * }
 		 */
-		extrudeX(dx, v, e, multiplier = false, comment = '') {
-			if (e == null) {
-				e = this.makeE(
-					parseFloat(this.plannedPosition.x) + parseFloat(dx),
-					this.plannedPosition.y,
-					this.plannedPosition.z
-				);
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(this.plannedPosition.x) + parseFloat(dx),
-						parseFloat(this.plannedPosition.y),
-						parseFloat(this.plannedPosition.z)
-					);
-			}
-
+		extrudeX(dx, v, e = null, comment = '') {
 			this.setRelativePosition();
-			this._moveXYZE({ x: dx, e: e, v: v, comment: comment });
+			this._moveXYZE({ x: dx, e, isExtrude: true, v, comment });
 		}
 
 		/**
 		 * Move a relative distance in X and Y while extruding.
+		 * @group Extrusion
 		 * @param {number} dx - Distance to move in X in mm.
 		 * @param {number} dy - Distance to move in Y in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 * @example
 		 * function fabDraw() {
 		 *   fab.extrudeXY(30, 40, 1500); // extrude diagonally
 		 * }
 		 */
-		extrudeXY(dx, dy, v, e, multiplier = false, comment = '') {
-			if (e == null) {
-				e = this.makeE(
-					parseFloat(this.plannedPosition.x) + parseFloat(dx),
-					parseFloat(this.plannedPosition.y) + parseFloat(dy),
-					this.plannedPosition.z
-				);
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(this.plannedPosition.x) + parseFloat(dx),
-						parseFloat(this.plannedPosition.y) + parseFloat(dy),
-						parseFloat(this.plannedPosition.z)
-					);
-			}
-
+		extrudeXY(dx, dy, v, e = null, comment = '') {
 			this.setRelativePosition();
-			this._moveXYZE({ x: dx, y: dy, e: e, v: v, comment: comment });
+			this._moveXYZE({ x: dx, y: dy, e, isExtrude: true, v, comment });
 		}
 
 		/**
 		 * Move a relative distance in Y while extruding.
+		 * @group Extrusion
 		 * @param {number} dy - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 */
-		extrudeY(dy, v, e, multiplier = false) {
-			if (e == null) {
-				e = this.makeE(
-					parseFloat(this.plannedPosition.x),
-					parseFloat(this.plannedPosition.y) + parseFloat(dy),
-					parseFloat(this.plannedPosition.z)
-				);
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(this.plannedPosition.x),
-						parseFloat(this.plannedPosition.y) + parseFloat(dy),
-						parseFloat(this.plannedPosition.z)
-					);
-			}
-
+		extrudeY(dy, v, e = null) {
 			this.setRelativePosition();
-			this._moveXYZE({ y: dy, e: e, v: v });
+			this._moveXYZE({ y: dy, e, isExtrude: true, v });
 		}
 
 		/**
 		 * Move a relative distance in Z while extruding.
+		 * @group Extrusion
 		 * @param {number} dz - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 */
-		extrudeZ(dz, v, e, multiplier = false) {
-			if (e == null) {
-				e = this.makeE(
-					parseFloat(this.plannedPosition.x),
-					parseFloat(this.plannedPosition.y),
-					parseFloat(this.plannedPosition.z) + parseFloat(dz)
-				);
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(this.plannedPosition.x),
-						parseFloat(this.plannedPosition.y),
-						parseFloat(this.plannedPosition.z) + parseFloat(dz)
-					);
-			}
-
+		extrudeZ(dz, v, e = null) {
 			this.setRelativePosition();
-			this._moveXYZE({ z: dz, e: e, v: v });
+			this._moveXYZE({ z: dz, e, isExtrude: true, v });
 		}
 
 		/**
 		 * Move to an absolute X position while extruding.
+		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 */
-		extrudeToX(x, v, e, multiplier = false, comment = '') {
-			if (e == null) {
-				e = this.makeE(parseFloat(x), this.plannedPosition.y, this.plannedPosition.z);
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(x),
-						parseFloat(this.plannedPosition.y),
-						parseFloat(this.plannedPosition.z)
-					);
-			}
-
+		extrudeToX(x, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ x: x, e: e, v: v, comment: comment });
+			this._moveXYZE({ x, e, isExtrude: true, v, comment });
 		}
 
 		/**
 		 * Move to an absolute Y position while extruding.
+		 * @group Extrusion
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 */
-		extrudeToY(y, v, e, multiplier = false, comment = '') {
-			if (e == null) {
-				e = this.makeE(this.plannedPosition.x, parseFloat(y), this.plannedPosition.z);
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(this.plannedPosition.x),
-						parseFloat(y),
-						parseFloat(this.plannedPosition.z)
-					);
-			}
-
+		extrudeToY(y, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ y: y, e: e, v: v, comment: comment });
+			this._moveXYZE({ y, e, isExtrude: true, v, comment });
 		}
 
 		/**
 		 * Move to an absolute XY position while extruding.
+		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 * @example
 		 * function fabDraw() {
 		 *   fab.extrudeToXY(100, 100, 1500); // extrude to absolute position
 		 * }
 		 */
-		extrudeToXY(x, y, v, e, multiplier = false, comment = '') {
-			if (e == null) {
-				e = this.makeE(parseFloat(x), parseFloat(y), this.plannedPosition.z);
-			} else if (multiplier) {
-				e = e * this.makeE(parseFloat(x), parseFloat(y), parseFloat(this.plannedPosition.z));
-			}
-
+		extrudeToXY(x, y, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ x: x, y: y, e: e, v: v, comment: comment });
+			this._moveXYZE({ x, y, e, isExtrude: true, v, comment });
 		}
 
 		/**
 		 * Move to an absolute Z position while extruding.
+		 * @group Extrusion
 		 * @param {number} z - Target Z position in mm.
 		 * @param {number} v - Feedrate in mm/min.
-		 * @param {number|null} e - Extrusion amount in mm. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on the auto-calculated extrusion.
+		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 */
-		extrudeToZ(z, v, e, multiplier = false, comment = '') {
-			if (e == null) {
-				e = this.makeE(this.plannedPosition.x, this.plannedPosition.y, parseFloat(z));
-			} else if (multiplier) {
-				e =
-					e *
-					this.makeE(
-						parseFloat(this.plannedPosition.x),
-						parseFloat(this.plannedPosition.y),
-						parseFloat(z)
-					);
-			}
-
+		extrudeToZ(z, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ z: z, e: e, v: v, comment: comment });
+			this._moveXYZE({ z, e, isExtrude: true, v, comment });
 		}
 
 		/**
 		 * Extrude a circle centered at (x, y) at the given Z height.
+		 * @group Utilities
 		 * @param {number} x - Center X position in mm.
 		 * @param {number} y - Center Y position in mm.
 		 * @param {number} z - Z height in mm.
 		 * @param {number} d - Diameter in mm.
 		 * @param {number} [v] - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount per segment. Calculated automatically if null.
-		 * @param {boolean} [multiplier=false] - If true, treat `e` as a multiplier on auto-calculated extrusion.
 		 * @example
 		 * function fabDraw() {
 		 *   fab.circle(110, 110, 0.2, 20, 1500);
 		 * }
 		 */
-		circle(x, y, z, d, v, e = null, multiplier = false) {
+		circle(x, y, z, d, v, e = null) {
 			const r = d / 2;
 			const segments = Math.max(16, Math.ceil(Math.PI * d));
-			this.moveRetract(x + r, y, z, v);
+			this.retractTo(x + r, y, z, v);
 			for (let i = 1; i <= segments; i++) {
 				const angle = (i / segments) * Math.PI * 2;
-				this.extrudeToXY(x + r * Math.cos(angle), y + r * Math.sin(angle), v, e, multiplier);
+				this.extrudeToXY(x + r * Math.cos(angle), y + r * Math.sin(angle), v, e);
 			}
 		}
 
 		/**
-		 * Set the feedrate for subsequent moves.
-		 * @param {number} v - Feedrate in mm/min.
+		 * Set the feedrate for subsequent moves. Persistent — applies to all moves until changed, like `strokeWeight()` in p5.js.
+		 * @group Configuration
+		 * @param {number} v - Feedrate in mm/sec.
 		 */
-		setSpeed(v) {
+		speed(v) {
 			this._moveXYZE({ v: v });
+		}
+
+		/** @deprecated Use `speed()` instead. */
+		setSpeed(v) {
+			window.parent.postMessage(
+				{ type: 'output', body: 'p5.fab: setSpeed() is deprecated — use speed() instead.' },
+				'*'
+			);
+			this.speed(v);
 		}
 
 		/**
 		 * Prime the extruder by pushing filament forward. Used after a retraction.
+		 * @group Utilities
 		 * @param {number} de - Amount to prime in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -1684,6 +2212,7 @@
 
 		/**
 		 * Set the maximum acceleration for each axis.
+		 * @group Configuration
 		 * @param {number} x - Max X acceleration in mm/s².
 		 * @param {number} y - Max Y acceleration in mm/s².
 		 * @param {number} z - Max Z acceleration in mm/s².
@@ -1695,6 +2224,7 @@
 
 		/**
 		 * Set the starting acceleration for print moves.
+		 * @group Configuration
 		 * @param {number} a - Acceleration in mm/s².
 		 */
 		setStartAcceleration(a) {
@@ -1705,6 +2235,7 @@
 		/**
 		 * Calculate the extrusion amount needed to move to an absolute XYZ position
 		 * based on the current nozzle and filament diameters.
+		 * @group Utilities
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
@@ -1713,9 +2244,9 @@
 		makeE(x, y, z) {
 			const dist3D = (x, y, z) =>
 				sqrt(
-					(x - this.plannedPosition.x) ** 2 +
-						(y - this.plannedPosition.y) ** 2 +
-						(z - this.plannedPosition.z) ** 2
+					(x - this._plannedPosition.x) ** 2 +
+						(y - this._plannedPosition.y) ** 2 +
+						(z - this._plannedPosition.z) ** 2
 				);
 			// CHANGED THIS to toFixed(4) instead of 2
 			return (
@@ -1730,6 +2261,7 @@
 
 		/**
 		 * Select a tool by index (for multi-tool machines like Jubilee).
+		 * @group Utilities
 		 * @param {number} tool_idx - Zero-based tool index.
 		 */
 		pickupTool(tool_idx) {
@@ -1739,11 +2271,12 @@
 
 		/**
 		 * Append a comment to the last command in the queue.
+		 * @group Utilities
 		 * @param {string} c - Comment text (without the leading semicolon).
 		 */
 		addComment(c) {
-			_fab.commands[_fab.commands.length - 1] += ` ;${c}`;
-			_fab.commandStream[_fab.commandStream.length - 1] += ` ;${c}`;
+			_fab._commands[_fab._commands.length - 1] += ` ;${c}`;
+			_fab._commandStream[_fab._commandStream.length - 1] += ` ;${c}`;
 		}
 	}
 

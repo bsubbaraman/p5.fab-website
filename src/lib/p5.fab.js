@@ -87,7 +87,7 @@ p5.prototype.predraw = (function (b) {
         // _fab.serial.write("M114\n");
         // console.log("the async position after resetting values is", _fab.asyncPosition);
         _fab.model = "";
-        _fab.commands = [];
+        _fab._commands = [];
         _fab.commandsForRendering = [];
         _fab.trace = [];
         _fab.firstMoveComplete = false;
@@ -221,8 +221,8 @@ class Fab {
 
     // Setup machine properties and initial state
     this.printer = config.name;
-    this.commands = [];                               // All commands to be sent to the machine
-    this.commandStream = [];                          // For streaming to the printer
+    this._commands = [];                               // All commands to be sent to the machine
+    this._commandStream = [];                          // For streaming to the printer
     this.commandsForRendering = [];                   // Commands to be visualized
     this.lastAsyncPosition = new XYZEFC();            // Absolute positions used to plan toolpaths
     this.asyncPosition = new XYZEFC();                // Absolute positions used to plan toolpaths
@@ -232,7 +232,7 @@ class Fab {
     this.reportedPos = {};
     this.gotInitPosition = false;
     this.defaultSpeed = 25;                           // mm/sec
-    this.isPrinting = false;
+    this._isPrinting = false;
     this.continuousMode = false;                      // added in etchasketch
     this.fabscribe = false;
 
@@ -417,7 +417,7 @@ class Fab {
       this.subdivideMove(cmd, traceLineNum);
     }
     else {
-      this.commands.push(cmd);
+      this._commands.push(cmd);
     }
 
     this.commandsForRendering.push(cmd);
@@ -433,7 +433,7 @@ class Fab {
       // For now, don't subdivide the first move, since we don't know where we are to start
       // TODO: Get start position first thing instead
       if (!this.firstMoveComplete) {
-        this.commands.push(cmd);
+        this._commands.push(cmd);
         this.firstMoveComplete = true;
         this.asyncPosition.x = moveCommand.x == null ? this.asyncPosition.x : moveCommand.x;
         this.asyncPosition.y = moveCommand.y == null ? this.asyncPosition.y : moveCommand.y;
@@ -469,19 +469,19 @@ class Fab {
             subCmd += ` ${moveCommand.comment}`;
           }
           // subCmd += ` ; segmentationLength = ${segmentationLength}` // maybe add this back
-          this.commands.push(subCmd);
+          this._commands.push(subCmd);
 
           i += 1;
         }
       }
       else {
-        this.commands.push(cmd);
+        this._commands.push(cmd);
         // TODO: added but untested!
         this.trace.push([cmd, traceLineNum]);
       }
     }
     else {
-      this.commands.push(cmd);
+      this._commands.push(cmd);
     }
   }
 
@@ -499,7 +499,7 @@ class Fab {
 
 
     if (_fab.sentCommands[_fab.sentCommands.length - 1] != positionQuery) {
-      _fab.commandStream.unshift(positionQuery);
+      _fab._commandStream.unshift(positionQuery);
     }
     if (_fab.lastRtPosCollected - Date.now() > 500) {
       console.log("******SLOW DATA******");
@@ -515,7 +515,7 @@ class Fab {
       return;
     }
     if (!this.isPrinting && _syncVizStream) {
-      this.commandStream = this.commands;
+      this._commandStream = this._commands;
       _syncVizStream = false;
 
       // TODO: If sync commands are needed, then start this interval after those are sent
@@ -532,16 +532,16 @@ class Fab {
 
     // Send first command
     // fab.getRealtimePosition();
-    if (this.commandStream.length > 0) {
-      this.isPrinting = true;
-      this.serial.write(this.commandStream[0] + "\n");
-      this.commandStream.shift();
+    if (this._commandStream.length > 0) {
+      this._isPrinting = true;
+      this.serial.write(this._commandStream[0] + "\n");
+      this._commandStream.shift();
     } else {
       console.log("All commands sent!");
 
       // TODO: It's still printing for a bit to finish all moves in the buffer,
       //       so this isn't actually false yet.
-      this.isPrinting = false;
+      this._isPrinting = false;
     }
 
     if (this.fabscribe) {
@@ -552,20 +552,20 @@ class Fab {
 
   printStream() {
     // TODO: Do I need print() and printStream()?
-    if (this.commandStream.length > 0) {
-      this.isPrinting = true;
+    if (this._commandStream.length > 0) {
+      this._isPrinting = true;
 
-      let commandToSend = this.commandStream[0];
+      let commandToSend = this._commandStream[0];
 
       if (this.midiMode) {
-        commandToSend = this.updateWithMidiValues(this.commandStream[0]);
+        commandToSend = this.updateWithMidiValues(this._commandStream[0]);
       }
 
 
       this.serial.write(commandToSend + "\n");
       // console.log("I just sent ", commandToSend);
 
-      this.commandStream.shift();
+      this._commandStream.shift();
       // get position after every command?
       // const positionQuery = `M114 R`; // Marlin
       // syringe
@@ -581,7 +581,7 @@ class Fab {
 
       // TODO: It's still printing for a bit to finish all moves in the buffer,
       //       so this isn't actually false yet.
-      this.isPrinting = false;
+      this._isPrinting = false;
       if (!this.continuousMode) {
         // if not printing continuously, rerun fabDraw so we're ready to go again
         _once = false;
@@ -1053,13 +1053,13 @@ class Fab {
 
   pausePrint(t = null) {
     const cmd = t ? `M1 S${t}` : "M1 S10 this is a pause";
-    this.commandStream.unshift(cmd);
+    this._commandStream.unshift(cmd);
   }
 
   stopPrint() {
     console.log("FABSCRIBE STATUS:", this.fabscribe);
-    this.commandStream = [];
-    this.isPrinting = false;
+    this._commandStream = [];
+    this._isPrinting = false;
     fabDraw();
 
     // TODO: adding for testing fabscription on jubilee, need to formalize
@@ -1443,8 +1443,8 @@ class Fab {
   }
 
   addComment(c) {
-    _fab.commands[_fab.commands.length - 1] += ` ;${c}`;
-    _fab.commandStream[_fab.commands.length - 1] += ` ;${c}`;
+    _fab._commands[_fab._commands.length - 1] += ` ;${c}`;
+    _fab._commandStream[_fab._commandStream.length - 1] += ` ;${c}`;
   }
 
   downloadFabscriptionLog() {

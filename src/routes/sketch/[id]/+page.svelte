@@ -198,7 +198,7 @@
 							onload={handleIframeLoad}
 							id="preview"
 							src="/preview.html"
-							sandbox="allow-scripts allow-downloads"
+							sandbox="allow-scripts allow-same-origin allow-downloads"
 							allow="serial"
 						></iframe>
 					{/if}

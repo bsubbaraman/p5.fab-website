@@ -1,9 +1,0 @@
-{
-  "name": "prusa_mk3",
-  "baudRate": 115200,
-  "nozzleDiameter": 0.4,
-  "filamentDiameter": 1.75,
-  "maxX": 250,
-  "maxY": 210,
-  "maxZ": 210
-}
