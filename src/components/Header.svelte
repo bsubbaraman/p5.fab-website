@@ -12,7 +12,7 @@
 	const margin = 32;
 	const periods = 40;
 	const amplitude = 6;
-	const centerY = 22;
+	const centerY = 8;
 	const steps = 1000;
 	const sigma = 40;
 	const extraFactor = 2.5;
@@ -100,7 +100,7 @@
 		onpointerleave={handlePointerLeave}
 	>
 		{#if pathD}
-			<svg width="100%" height="50">
+			<svg width="100%" height="20" style="overflow: visible">
 				<path
 					d={pathD}
 					stroke="black"
