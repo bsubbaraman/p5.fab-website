@@ -2,6 +2,7 @@ import { Parser } from "acorn";
 import { editorState, store } from "../store/state.svelte.js";
 import { flashCode } from "$lib/flash.js";
 import { highlightErrorLine, clearErrorHighlight } from "$lib/errorHighlight.js";
+import { evalPrefix } from "$lib/evalPrefix.js";
 
 
 export function evalCode(code) {
@@ -26,16 +27,7 @@ export async function evalSketch(sketchCode) {
     editorState.output = [];
     clearErrorHighlight(editorState.editorView);
 
-    // Build prefix as an explicit string so prefixLines stays in sync with the wrapper
-    const evalPrefix =
-      `(() => {\n` +
-      `    return () => {\n` +
-      `      console.log = (function(){\n` +
-      `        return function (txt) {\n` +
-      `          window.parent.postMessage({ type: "output", body: txt }, '*');\n` +
-      `        };\n` +
-      `      })();\n` +
-      `      `;
+    // evalPrefix is shared with embed/+page.svelte via $lib/evalPrefix.js
     const prefixLines = (evalPrefix.match(/\n/g) || []).length;
 
     const isFirstRun = !editorState.p5Initialized;

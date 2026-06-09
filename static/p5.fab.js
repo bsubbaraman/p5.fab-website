@@ -120,6 +120,18 @@
 			_fab._extrusionMultiplier = _fab._defaultExtrusionMultiplier;
 			_fab._retractAmount = _fab._defaultRetractAmount;
 			_fab._zHopHeight = _fab._defaultZHopHeight;
+			_fab._printSpeed = _fab._defaultPrintSpeed;
+			_fab._travelSpeed = _fab._defaultTravelSpeed;
+			_fab._maxSpeedX = _fab._defaultMaxSpeedX;
+			_fab._maxSpeedY = _fab._defaultMaxSpeedY;
+			_fab._maxSpeedZ = _fab._defaultMaxSpeedZ;
+			_fab._maxSpeedE = _fab._defaultMaxSpeedE;
+			_fab._maxAccelerationX = _fab._defaultMaxAccelerationX;
+			_fab._maxAccelerationY = _fab._defaultMaxAccelerationY;
+			_fab._maxAccelerationZ = _fab._defaultMaxAccelerationZ;
+			_fab._maxAccelerationE = _fab._defaultMaxAccelerationE;
+			_fab._printAcceleration = _fab._defaultPrintAcceleration;
+			_fab._travelAcceleration = _fab._defaultTravelAcceleration;
 			_fab._transformOffset = { x: 0, y: 0, z: 0 };
 			_fab._stateStack = [];
 			_fab._lastGcodePosition = { x: 0, y: 0, z: 0 };
@@ -127,6 +139,8 @@
 				window.parent.postMessage({ type: 'parsing_start' }, '*');
 				setTimeout(() => {
 					_fab._commands = [];
+					_fab._setMaxSpeeds();
+					_fab._setMaxAccelerations();
 					fabDraw();
 					_fab.parseGcodeAsync();
 					_fab.syncVizStream = true;
@@ -260,13 +274,15 @@
 				this[letter.toLowerCase()] = value;
 			}
 		}
+
+		toString() {
+			return this.raw;
+		}
 	}
 
 	//===================================
 	// Fab
 	//===================================
-	// Printer presets are loaded eagerly from /printers/<name>.json at script startup.
-	// By the time a user runs a sketch these are guaranteed to be populated.
 	const printerPresets = {
 		ender3: {
 			name: 'ender3',
@@ -278,7 +294,19 @@
 			maxZ: 250,
 			extrusionMultiplier: 1,
 			retractAmount: 8,
-			zHopHeight: 0.2
+			zHopHeight: 0.2,
+			printSpeed: 50,
+			travelSpeed: 150,
+			maxSpeedX: 200,
+			maxSpeedY: 200,
+			maxSpeedZ: 10,
+			maxSpeedE: 60,
+			maxAccelerationX: 500,
+			maxAccelerationY: 500,
+			maxAccelerationZ: 100,
+			maxAccelerationE: 5000,
+			printAcceleration: 500,
+			travelAcceleration: 1000
 		},
 		prusa_mk3: {
 			name: 'prusa_mk3',
@@ -290,7 +318,19 @@
 			maxZ: 210,
 			extrusionMultiplier: 1,
 			retractAmount: 8,
-			zHopHeight: 0.2
+			zHopHeight: 0.2,
+			printSpeed: 50,
+			travelSpeed: 150,
+			maxSpeedX: 200,
+			maxSpeedY: 200,
+			maxSpeedZ: 12,
+			maxSpeedE: 60,
+			maxAccelerationX: 1000,
+			maxAccelerationY: 1000,
+			maxAccelerationZ: 200,
+			maxAccelerationE: 5000,
+			printAcceleration: 1250,
+			travelAcceleration: 1500
 		},
 		jubilee: {
 			name: 'jubilee',
@@ -302,7 +342,19 @@
 			maxZ: 300,
 			extrusionMultiplier: 1,
 			retractAmount: 8,
-			zHopHeight: 0.2
+			zHopHeight: 0.2,
+			printSpeed: 50,
+			travelSpeed: 150,
+			maxSpeedX: 200,
+			maxSpeedY: 200,
+			maxSpeedZ: 15,
+			maxSpeedE: 60,
+			maxAccelerationX: 1000,
+			maxAccelerationY: 1000,
+			maxAccelerationZ: 200,
+			maxAccelerationE: 3000,
+			printAcceleration: 1000,
+			travelAcceleration: 1500
 		}
 	};
 
@@ -317,6 +369,18 @@
 		extrusionMultiplier: 1,
 		retractAmount: 8,
 		zHopHeight: 0.2,
+		printSpeed: 50,
+		travelSpeed: 150,
+		maxSpeedX: 200,
+		maxSpeedY: 200,
+		maxSpeedZ: 10,
+		maxSpeedE: 60,
+		maxAccelerationX: 500,
+		maxAccelerationY: 500,
+		maxAccelerationZ: 100,
+		maxAccelerationE: 5000,
+		printAcceleration: 500,
+		travelAcceleration: 1000,
 		autoConnect: true
 	};
 
@@ -327,17 +391,18 @@
 		// Absolute movement — v optional
 		moveTo: ['x', 'y', 'z'],
 		travelTo: ['x', 'y', 'z'],
+		retractTo: ['x', 'y', 'z'],
 		moveToX: ['x'],
 		moveToY: ['y'],
 		moveToZ: ['z'],
 		// Relative movement — v optional
 		move: ['dx', 'dy', 'dz'],
+		travel: ['dx', 'dy', 'dz'],
 		moveX: ['dx'],
 		moveY: ['dy'],
 		moveZ: ['dz'],
 		// Absolute extrusion — e auto-calculated, v optional
 		extrudeTo: ['x', 'y', 'z'],
-		retractTo: ['x', 'y', 'z'],
 		extrudeToX: ['x'],
 		extrudeToY: ['y'],
 		extrudeToXY: ['x', 'y'],
@@ -349,13 +414,24 @@
 		extrudeY: ['dy'],
 		extrudeZ: ['dz'],
 		// Config — these are the whole point of the call
-		// Relative retract travel
-		retractBy: ['dx', 'dy', 'dz'],
-		// Config — these are the whole point of the call
 		setTemps: ['tNozzle', 'tBed'],
 		speed: ['v'],
+		printSpeed: ['v'],
+		travelSpeed: ['v'],
+		maxSpeedX: ['v'],
+		maxSpeedY: ['v'],
+		maxSpeedZ: ['v'],
+		maxSpeedE: ['v'],
+		maxAccelerationX: ['v'],
+		maxAccelerationY: ['v'],
+		maxAccelerationZ: ['v'],
+		maxAccelerationE: ['v'],
+		printAcceleration: ['v'],
+		travelAcceleration: ['v'],
 		retractAmount: ['mm'],
-		zHopHeight: ['mm']
+		zHopHeight: ['mm'],
+		// Utilities
+		translate: ['dx', 'dy', 'dz']
 	});
 
 	const fabValidationHandler = {
@@ -414,14 +490,6 @@
 			this.gotInitPosition = false;
 			this._isPrinting = false;
 
-			// Print parameters (reset to profile defaults each fabDraw)
-			this._extrusionMultiplier = 1;
-			this._defaultExtrusionMultiplier = 1;
-			this._retractAmount = 8;
-			this._defaultRetractAmount = 8;
-			this._zHopHeight = 0.2;
-			this._defaultZHopHeight = 0.2;
-
 			// Push/pop state
 			this._transformOffset = { x: 0, y: 0, z: 0 };
 			this._stateStack = [];
@@ -472,6 +540,30 @@
 			this._defaultRetractAmount = config.retractAmount;
 			this._zHopHeight = config.zHopHeight;
 			this._defaultZHopHeight = config.zHopHeight;
+			this._printSpeed = config.printSpeed;
+			this._defaultPrintSpeed = config.printSpeed;
+			this._travelSpeed = config.travelSpeed;
+			this._defaultTravelSpeed = config.travelSpeed;
+			this._maxSpeedX = config.maxSpeedX;
+			this._defaultMaxSpeedX = config.maxSpeedX;
+			this._maxSpeedY = config.maxSpeedY;
+			this._defaultMaxSpeedY = config.maxSpeedY;
+			this._maxSpeedZ = config.maxSpeedZ;
+			this._defaultMaxSpeedZ = config.maxSpeedZ;
+			this._maxSpeedE = config.maxSpeedE;
+			this._defaultMaxSpeedE = config.maxSpeedE;
+			this._maxAccelerationX = config.maxAccelerationX;
+			this._defaultMaxAccelerationX = config.maxAccelerationX;
+			this._maxAccelerationY = config.maxAccelerationY;
+			this._defaultMaxAccelerationY = config.maxAccelerationY;
+			this._maxAccelerationZ = config.maxAccelerationZ;
+			this._defaultMaxAccelerationZ = config.maxAccelerationZ;
+			this._maxAccelerationE = config.maxAccelerationE;
+			this._defaultMaxAccelerationE = config.maxAccelerationE;
+			this._printAcceleration = config.printAcceleration;
+			this._defaultPrintAcceleration = config.printAcceleration;
+			this._travelAcceleration = config.travelAcceleration;
+			this._defaultTravelAcceleration = config.travelAcceleration;
 			this.maxZ = config.maxZ;
 			if (config.coordinateSystem == 'delta') {
 				this._maxX = (2 * config.radius) / sqrt(2);
@@ -501,6 +593,7 @@
 		/**
 		 * The printer's nozzle diameter in mm. Used to calculate extrusion amounts automatically.
 		 *
+		 * The default is set by the printer profile.
 		 * You can configure the nozzle diameter via `setPrinter()`
 		 * or directly to override the preset.
 		 * @type {number}
@@ -516,14 +609,14 @@
 		 *   fab.setTemps(205, 60);
 		 *   const lineLength = 100;
 		 *
-		 *   fab.retractTo(50, 50, 0);
+		 *   fab.travelTo(50, 50, 0);
 		 *   fab.extrudeX(lineLength);
 		 *   let lastCmd = fab.commands.at(-1);
 		 *   console.log(`Extruding ${lastCmd.e}mm with a ${fab.nozzleDiameter}mm nozzle`);
 		 *
 		 *   // Change nozzle diameter and extrude another line
 		 *   fab.nozzleDiameter = 1.0;
-		 *   fab.retractTo(50, 100, 0);
+		 *   fab.travelTo(50, 100, 0);
 		 *   fab.extrudeX(lineLength);
 		 *   lastCmd = fab.commands.at(-1);
 		 *   console.log(`Extruding ${lastCmd.e}mm with a ${fab.nozzleDiameter}mm nozzle`);
@@ -547,10 +640,41 @@
 		}
 
 		/**
-		 * The filament diameter in mm. Used to calculate extrusion amounts automatically.
-		 * Set via `setPrinter()` or assign directly to override the preset.
+		 * The diameter of the filament being used in mm. Used to calculate extrusion amounts automatically.
+		 *
+		 * The default value is set by the printer profile.
+		 * You can configure the filament diameter via `setPrinter()`
+		 * or directly to override the preset.
 		 * @type {number}
 		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   fab.setPrinter('ender3', { filamentDiameter: 2.85 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *   const lineLength = 100;
+		 *
+		 *   fab.travelTo(50, 50, 0);
+		 *   fab.extrudeX(lineLength);
+		 *   let lastCmd = fab.commands.at(-1);
+		 *   console.log(`Extruding ${lastCmd.e}mm using ${fab.filamentDiameter}mm filament`);
+		 *
+		 *   // Change filament diameter and extrude another line
+		 *   fab.filamentDiameter = 1.75;
+		 *   fab.travelTo(50, 100, 0);
+		 *   fab.extrudeX(lineLength);
+		 *   lastCmd = fab.commands.at(-1);
+		 *   console.log(`Extruding ${lastCmd.e}mm using ${fab.filamentDiameter}mm filament`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get filamentDiameter() {
 			return this._filamentDiameter;
@@ -564,19 +688,64 @@
 			);
 		}
 
+		/**
+		 * The maximum X dimension of the printer in mm.
+		 * The default value is set by the printer profile.
+		 * You can configure the max dimentaion via `setPrinter()`
+		 * or directly to override the preset.
+		 * @type {number}
+		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   // hypothetical looooooong printer
+		 *   fab.setPrinter('ender3', { maxX: 500 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		get maxX() {
+			return this._maxX;
+		}
+
 		set maxX(v) {
 			this._maxX = v;
 			this._centerX = v / 2;
 			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxX', value: v } }, '*');
 		}
+
 		/**
-		 * The maximum X travel distance of the printer in mm.
-		 * Set by the printer profile; assign directly to override.
+		 * The maximum Y dimension of the printer in mm.
+		 * The default value is set by the printer profile.
+		 * You can configure the max dimentaion via `setPrinter()`
+		 * or directly to override the preset.
 		 * @type {number}
-		 * @group Utilities
+		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   // hypothetical looooooong printer
+		 *   fab.setPrinter('ender3', { maxY: 500 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
-		get maxX() {
-			return this._maxX;
+		get maxY() {
+			return this._maxY;
 		}
 
 		set maxY(v) {
@@ -584,93 +753,258 @@
 			this._centerY = v / 2;
 			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxY', value: v } }, '*');
 		}
+
 		/**
-		 * The maximum Y travel distance of the printer in mm.
-		 * Set by the printer profile; assign directly to override.
+		 * The maximum Z dimension of the printer in mm.
+		 * The default value is set by the printer profile.
+		 * You can configure the max dimentaion via `setPrinter()`
+		 * or directly to override the preset.
 		 * @type {number}
-		 * @group Utilities
+		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   // hypothetical tall printer
+		 *   fab.setPrinter('ender3', { maxZ: 500 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
-		get maxY() {
-			return this._maxY;
+		get maxZ() {
+			return this._maxZ;
 		}
 
 		set maxZ(v) {
 			this._maxZ = v;
 			window.parent.postMessage({ type: 'fab_config', body: { property: 'maxZ', value: v } }, '*');
 		}
-		/**
-		 * The maximum Z travel distance of the printer in mm.
-		 * Set by the printer profile; assign directly to override.
-		 * @type {number}
-		 * @group Utilities
-		 */
-		get maxZ() {
-			return this._maxZ;
-		}
 
 		/**
-		 * The X center of the build plate in mm (`maxX / 2`). Useful for centering prints.
+		 * The X center of the build plate in mm (`maxX / 2`).
 		 * @readonly
 		 * @type {number}
-		 * @group Utilities
+		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *
+		 *   // Draw a circle at the center of the bed
+		 *   fab.circle(fab.centerX, fab.centerY, 0, 100);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get centerX() {
 			return this._centerX;
 		}
 
 		/**
-		 * The Y center of the build plate in mm (`maxY / 2`). Useful for centering prints.
+		 * The Y center of the build plate in mm (`maxY / 2`).
 		 * @readonly
 		 * @type {number}
-		 * @group Utilities
+		 * @group Configuration
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *
+		 *   // Draw a circle at the center of the bed
+		 *   fab.circle(fab.centerX, fab.centerY, 0, 100);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get centerY() {
 			return this._centerY;
 		}
 
 		/**
-		 * Current planned X position in mm (local coordinates, before any `translate` offset).
+		 * Current planned X position in mm.
+		 *
+		 * Note that this is not the current physical position on the machine,
+		 * but the planned position in code. The value is in local (i.e. transformed)
+		 * coordinate space.
 		 * @readonly
 		 * @type {number}
-		 * @group Utilities
+		 * @group Motion
+		 * @example
+		 *  function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *
+		 *   fab.moveTo(fab.centerX - 10, fab.centerY, 0);
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *
+		 *   fab.push()
+		 *   fab.translate(fab.centerX - 10, fab.centerY, 0);
+		 *   fab.extrudeToX(20);
+		 *   // Position will be in the transformed coordinate space
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *   fab.pop();
+		 *
+		 *   fab.moveTo(0, 0, 0);
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get x() {
 			return this._plannedPosition.x;
 		}
 
 		/**
-		 * Current planned Y position in mm (local coordinates, before any `translate` offset).
+		 * Current planned Y position in mm.
+		 *
+		 * Note that this is not the current physical position on the machine,
+		 * but the planned position in code. The value is in local (i.e. transformed)
+		 * coordinate space.
 		 * @readonly
 		 * @type {number}
-		 * @group Utilities
+		 * @group Motion
+		 * @example
+		 *  function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *
+		 *   fab.moveTo(fab.centerX - 10, fab.centerY, 0);
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *
+		 *   fab.push()
+		 *   fab.translate(fab.centerX - 10, fab.centerY, 0);
+		 *   fab.extrudeToX(20);
+		 *   // Position will be in the transformed coordinate space
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *   fab.pop();
+		 *
+		 *   fab.moveTo(0, 0, 0);
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get y() {
 			return this._plannedPosition.y;
 		}
 
 		/**
-		 * Current planned Z position in mm (local coordinates, before any `translate` offset).
+		 * Current planned Z position in mm.
+		 *
+		 * Note that this is not the current physical position on the machine,
+		 * but the planned position in code. The value is in local (i.e. transformed)
+		 * coordinate space.
 		 * @readonly
 		 * @type {number}
-		 * @group Utilities
+		 * @group Motion
+		 * @example
+		 *  function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *
+		 *   fab.moveTo(fab.centerX - 10, fab.centerY, 0);
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *
+		 *   fab.push()
+		 *   fab.translate(fab.centerX - 10, fab.centerY, 0);
+		 *   fab.extrudeToX(20);
+		 *   // Position will be in the transformed coordinate space
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 *   fab.pop();
+		 *
+		 *   fab.moveTo(0, 0, 0);
+		 *   console.log(`Position: (${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get z() {
 			return this._plannedPosition.z;
 		}
 
 		/**
-		 * Whether a print is currently in progress.
-		 * Useful inside `draw()` to update a visualization or UI while printing.
+		 * Returns `true` if the printer is actively printing and `false` if not.
 		 * @readonly
 		 * @type {boolean}
 		 * @group Utilities
+		 * @example
+		 *  function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   const layerHeight = 0.2;
+		 *   const radius = 100;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < radius; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, radius);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   // Change the background color for additional visual feedback about print status
+		 *   if (fab.isPrinting) {
+		 *     // orange if printing
+		 *     background(255, 103, 0, 127);
+		 *   }
+		 *   else {
+		 *     // green if idle
+		 *     background(0, 255, 0, 127);
+		 *   }
+		 *   fab.render();
+		 * }
 		 */
 		get isPrinting() {
 			return this._isPrinting;
 		}
 
 		/**
-		 * The GCode commands generated by the most recent fabDraw() call, as structured objects. Each entry has `.command` (e.g. 'G1', 'M104'), `.fields` (all parameters as a map), and direct lowercase field access (`.x`, `.s`, `.f`, etc.). Cleared and rebuilt each time fabDraw() runs.
+		 * The GCode commands generated by the most recent `fabDraw()` call, as structured objects.
+		 *
+		 * Each entry has a `.command` (e.g. 'G1', 'M104'), `.fields` (all parameters as a map), and direct lowercase field access (`.x`, `.s`, `.f`, etc.). `commands` is rebuilt each time `fabDraw()` runs.
 		 *
 		 * A line of GCode consists of fields that are separated by spaces.
 		 * A field can be interpreted as a command, a parameter, or some custom purpose. It typically consists of a letter directly followed by a number. For example, `G1` is a linear move command. For a comprehensive overview of GCode commands, see {@link https://marlinfw.org/meta/gcode/ Marlin's GCode dictionary}.
@@ -680,16 +1014,32 @@
 		 * @property {Object.<string, number|string>} fields - All parameter fields keyed by
 		 *   uppercase letter, e.g. `{ X: 100, Y: 50, E: 0.45, F: 2400 }`.
 		 * @property {string|null} comment - Inline comment text after `;`, or `null`.
-		 *
-		 * Field values are also accessible as direct lowercase properties:
-		 * `cmd.x`, `cmd.s`, `cmd.f`, etc. — `undefined` if the field is absent.
-		 * G-code commands generated by the most recent `fabDraw()` call, as structured objects.
-		 * Each entry has `.command` (e.g. `'G1'`, `'M104'`), `.fields` (all parameters as a map),
-		 * and direct lowercase field access (`.x`, `.s`, `.f`, etc.).
-		 * Cleared and rebuilt each time `fabDraw()` runs.
 		 * @readonly
 		 * @type {GCodeCommand[]}
 		 * @group Utilities
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *   fab.extrudeTo(fab.centerX, fab.centerY, 0);
+		 *
+		 *   // Get the last generated GCode command
+		 *   const lastCmd = fab.commands.at(-1);
+		 *   console.log(lastCmd);
+		 *   console.log(lastCmd.command);
+		 *   console.log(lastCmd.fields);
+		 *   console.log(lastCmd.x);
+		 *   console.log(lastCmd.s); // doesn't exist
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		get commands() {
 			return this._commands.map((s) => new GCodeCommand(s));
@@ -697,7 +1047,7 @@
 
 		/**
 		 * All generated G-code as a single newline-separated string.
-		 * Useful for downloading or logging the full output of `fabDraw()`.
+		 *
 		 * @readonly
 		 * @type {string}
 		 * @group Utilities
@@ -708,18 +1058,37 @@
 
 		/**
 		 * Set the extrusion multiplier applied to all subsequent auto-calculated extrusion amounts.
-		 * Works like `strokeWeight` in p5.js — set once and it applies to all moves until changed.
-		 * Automatically resets to the printer's default value at the start of each `fabDraw()` call.
-		 * Use `push()` / `pop()` to scope a temporary change.
-		 * @group Configuration
-		 * @param {number} value - Multiplier value (e.g. `1.2` for 20% over-extrusion, `0.8` for bridging).
+		 *
+		 * `extrusionMultiplier()` works like `strokeWeight` in p5.js: once set, it will apply to
+		 * all moves until changed. You can scope a temporary change with `push()` and `pop()`.
+		 *
+		 * Note that the mutliplier is only applied to auto-calculated extrusion amounts; explicit
+		 * extrusion will not be affected.
+		 * @group Print control
+		 * @param {number} value - Multiplier value (e.g. `1.2` for 20% over-extrusion, `0.8` for under-extrusion).
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.moveTo(0, 0, 0.2, 1500);
-		 *   fab.extrusionMultiplier(1.2);  // over-extrude first layer
-		 *   fab.extrudeTo(100, 0, 0.2, 1500);
-		 *   fab.extrusionMultiplier(1);    // reset to normal
-		 *   fab.extrudeTo(100, 100, 0.2, 1500);
+		 *   fab.autoHome();
+		 *   const layerHeight = 0.2;
+		 *   const height = 5;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     // Increase the extrusion multiplier over the course of the print
+		 *     let eMultiplier = map(z, 0, height, 1, 2);
+		 *     fab.extrusionMultiplier(eMultiplier);
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		extrusionMultiplier(value) {
@@ -727,22 +1096,119 @@
 		}
 
 		/**
-		 * Set the filament retraction distance for `retractTo()` and `retractBy()`.
-		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Set the filament retraction distance to be used by all relevant commands (e.g., `travelTo()`, `travel()`, `retractTo()`).
+		 *
+		 * Once set, it will apply to all moves until changed.
 		 * Use `push()` / `pop()` to scope a temporary change.
-		 * @group Configuration
+		 * The default retraction can be overriden in `setPrinter()`.
+		 * @group Print control
 		 * @param {number} mm - Retraction distance in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *   const z = 0.2;
+		 *
+		 *   // Test a series of retraction amounts
+		 *   const numLines = 5;
+		 *   const spacing = 10;
+		 *   const lineLength = 100;
+		 *   let retraction = 5;
+		 *   for (let i = 0; i < numLines; i++) {
+		 *     fab.push();
+		 *     fab.translate(50, 50 + spacing * i, z);
+		 *     fab.retractAmount(retraction);
+		 *     fab.travelTo(0, 0, 0);
+		 *     fab.extrudeX(lineLength);
+		 *     fab.pop();
+		 *     retraction += 1;
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+
+		* @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   // Specify a default retraction amount
+		 *   fab.setPrinter('ender3', { retractAmount: 5 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		retractAmount(mm) {
 			this._retractAmount = mm;
 		}
 
 		/**
-		 * Set the z-hop height for `retractTo()` and `retractBy()`.
-		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Set the z-hop height to be used by relevant commands (e.g., `travelTo()`, `travel()`).
+		 *
+		 * A z-hop raises the nozzle to avoid dragging along the surface during a travel move.
+		 * Once set, it will apply to all moves until changed.
 		 * Use `push()` / `pop()` to scope a temporary change.
-		 * @group Configuration
+		 * The default can be overriden in `setPrinter()`.
+		 * @group Print control
 		 * @param {number} mm - Z-hop height in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(205, 60);
+		 *   const z = 0.2;
+		 *
+		 *   // Test a series of z-hop heights
+		 *   const numLines = 5;
+		 *   const spacing = 10;
+		 *   const lineLength = 100;
+		 *   let zHop = 0.1;
+		 *   for (let i = 0; i < numLines; i++) {
+		 *     fab.push();
+		 *     fab.translate(50, 50 + spacing * i, z);
+		 *     fab.zHopHeight(zHop);
+		 *     fab.travelTo(0, 0, 0);
+		 *     fab.extrudeX(lineLength);
+		 *     fab.pop();
+		 *     zHop += 0.5;
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+
+		* @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   // Specify a default z-hop height
+		 *   fab.setPrinter('ender3', { zHopHeight: 0.5 });
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		zHopHeight(mm) {
 			this._zHopHeight = mm;
@@ -751,7 +1217,7 @@
 		/**
 		 * Begins a command group that contains its own printing state.
 		 *
-		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `speed()`) and
+		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `printSpeed())`) and
 		 * transformations (e.g., `translate()`) apply to all subsequent commands. `push()` and `pop()`
 		 * can be used to constrain the effect of print parameters and transformations to a specific group
 		 * of commands. The functionality follows `push()` and `pop()` in p5.js.
@@ -760,10 +1226,13 @@
 		 *
 		 * <ul>
 		 * <li>`extrusionMultiplier()`</li>
-		 * <li>`speed()`</li>
+		 * <li>`printSpeed()`, `travelSpeed()`</li>
 		 * <li>`translate()`</li>
 		 * <li>`retractAmount()`</li>
 		 * <li>`zHopHeight()`</li>
+		 * <li>`maxSpeedX()`, `maxSpeedY()`, `maxSpeedZ()`, `maxSpeedE()`</li>
+		 * <li>`maxAccelerationX()`, `maxAccelerationY()`, `maxAccelerationZ()`, `maxAccelerationE()`</li>
+		 * <li>`printAcceleration()`, `travelAcceleration()`</li>
 		 * </ul>
 		 *
 		 * @group Structure
@@ -775,7 +1244,7 @@
 		 * function fabDraw() {
 		 *   fab.autoHome();
 		 *   fab.setTemps(200, 60);
-		 *   fab.speed(50);
+		 *   fab.printSpeed(50);
 		 *   const firstLayerHeight = 0.2;
 		 *   const diameter = 50;
 		 *
@@ -786,10 +1255,10 @@
 		 *   fab.push();
 		 *
 		 *   // Translate to the center of the bed
-		 *   fab.translate(fab.centerX, fab.centerY);
+		 *   fab.translate(fab.centerX, fab.centerY, 0);
 		 *
 		 *   // Set new printing parameters
-		 *   fab.speed(20);
+		 *   fab.printSpeed(20);
 		 *   fab.extrusionMultiplier(2);
 		 *
 		 *   // Draw a circle using the slower speed and higher extrusion
@@ -810,17 +1279,28 @@
 		push() {
 			this._stateStack.push({
 				extrusionMultiplier: this._extrusionMultiplier,
-				feedrate: this._plannedPosition.f,
+				printSpeed: this._printSpeed,
+				travelSpeed: this._travelSpeed,
 				transformOffset: { ...this._transformOffset },
 				retractAmount: this._retractAmount,
-				zHopHeight: this._zHopHeight
+				zHopHeight: this._zHopHeight,
+				maxSpeedX: this._maxSpeedX,
+				maxSpeedY: this._maxSpeedY,
+				maxSpeedZ: this._maxSpeedZ,
+				maxSpeedE: this._maxSpeedE,
+				maxAccelerationX: this._maxAccelerationX,
+				maxAccelerationY: this._maxAccelerationY,
+				maxAccelerationZ: this._maxAccelerationZ,
+				maxAccelerationE: this._maxAccelerationE,
+				printAcceleration: this._printAcceleration,
+				travelAcceleration: this._travelAcceleration
 			});
 		}
 
 		/**
 		 * Ends a command group that contains its own printing state.
 		 *
-		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `speed()`) and
+		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `printSpeed()`) and
 		 * transformations (e.g., `translate()`) apply to all subsequent commands. `push()` and `pop()`
 		 * can be used to constrain the effect of print parameters and transformations to a specific group
 		 * of commands. The functionality follows `push()` and `pop()` in p5.js.
@@ -829,10 +1309,13 @@
 		 *
 		 * <ul>
 		 * <li>`extrusionMultiplier()`</li>
-		 * <li>`speed()`</li>
+		 * <li>`printSpeed()`, `travelSpeed()`</li>
 		 * <li>`translate()`</li>
 		 * <li>`retractAmount()`</li>
 		 * <li>`zHopHeight()`</li>
+		 * <li>`maxSpeedX()`, `maxSpeedY()`, `maxSpeedZ()`, `maxSpeedE()`</li>
+		 * <li>`maxAccelerationX()`, `maxAccelerationY()`, `maxAccelerationZ()`, `maxAccelerationE()`</li>
+		 * <li>`printAcceleration()`, `travelAcceleration()`</li>
 		 * </ul>
 		 *
 		 * @group Structure
@@ -844,7 +1327,7 @@
 		 * function fabDraw() {
 		 *   fab.autoHome();
 		 *   fab.setTemps(200, 60);
-		 *   fab.speed(50);
+		 *   fab.printSpeed(50);
 		 *   const firstLayerHeight = 0.2;
 		 *   const diameter = 50;
 		 *
@@ -855,10 +1338,10 @@
 		 *   fab.push();
 		 *
 		 *   // Translate to the center of the bed
-		 *   fab.translate(fab.centerX, fab.centerY);
+		 *   fab.translate(fab.centerX, fab.centerY, 0);
 		 *
 		 *   // Set new printing parameters
-		 *   fab.speed(20);
+		 *   fab.printSpeed(20);
 		 *   fab.extrusionMultiplier(2);
 		 *
 		 *   // Draw a circle using the slower speed and higher extrusion
@@ -880,34 +1363,72 @@
 			const state = this._stateStack.pop();
 			if (!state) return;
 			this._extrusionMultiplier = state.extrusionMultiplier;
+			this._printSpeed = state.printSpeed;
+			this._travelSpeed = state.travelSpeed;
 			this._transformOffset = state.transformOffset;
 			this._retractAmount = state.retractAmount;
 			this._zHopHeight = state.zHopHeight;
-			if (parseFloat(this._plannedPosition.f) !== parseFloat(state.feedrate)) {
-				this.speed(parseFloat(state.feedrate) / 60.0);
-			}
+			this._maxSpeedX = state.maxSpeedX;
+			this._maxSpeedY = state.maxSpeedY;
+			this._maxSpeedZ = state.maxSpeedZ;
+			this._maxSpeedE = state.maxSpeedE;
+			this._maxAccelerationX = state.maxAccelerationX;
+			this._maxAccelerationY = state.maxAccelerationY;
+			this._maxAccelerationZ = state.maxAccelerationZ;
+			this._maxAccelerationE = state.maxAccelerationE;
+			this._printAcceleration = state.printAcceleration;
+			this._travelAcceleration = state.travelAcceleration;
+			this._setMaxSpeeds();
+			this._setMaxAccelerations();
 		}
 
 		/**
 		 * Offset the coordinate origin for all subsequent moves by `(dx, dy, dz)`.
-		 * Offsets accumulate — a second `translate` adds to the first.
+		 *
+		 * Offsets accumulate: a second `translate` adds to the first.
 		 * Use `push()` / `pop()` to scope a translation to a specific region.
 		 * @group Motion
 		 * @param {number} dx - X offset in mm.
 		 * @param {number} dy - Y offset in mm.
 		 * @param {number} [dz=0] - Z offset in mm.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   for (let i = 0; i < 3; i++) {
-		 *     fab.push();
-		 *     fab.translate(i * 60, 0);
-		 *     fab.moveTo(0, 0, 0.2, 3000);
-		 *     fab.extrudeTo(50, 0, 0.2, 1500);
-		 *     fab.extrudeTo(50, 50, 0.2, 1500);
-		 *     fab.extrudeTo(0, 50, 0.2, 1500);
-		 *     fab.extrudeTo(0, 0, 0.2, 1500);
-		 *     fab.pop();
-		 *   }
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   fab.printSpeed(50);
+		 *   const firstLayerHeight = 0.2;
+		 *   const diameter = 50;
+		 *
+		 *   // Draw a circle on the left side of the bed
+		 *   fab.circle(fab.maxX/3, fab.centerY, firstLayerHeight, diameter);
+		 *
+		 *   // Begin a group of commands with different parameters
+		 *   fab.push();
+		 *
+		 *   // Translate to the center of the bed
+		 *   fab.translate(fab.centerX, fab.centerY, 0);
+		 *
+		 *   // Set new printing parameters
+		 *   fab.printSpeed(20);
+		 *   fab.extrusionMultiplier(2);
+		 *
+		 *   // Draw a circle using the slower speed and higher extrusion
+		 *   fab.circle(0, 0, firstLayerHeight, diameter);
+		 *
+		 *   // Restore parameters
+		 *   fab.pop();
+		 *
+		 *   // Print a circle on the right side of the bed
+		 *   fab.circle(2*fab.maxX/3, fab.centerY, firstLayerHeight, diameter);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		translate(dx, dy, dz = 0) {
@@ -917,14 +1438,71 @@
 		}
 
 		/**
-		 * Configure the fab instance for a specific printer preset, with optional overrides.
+		 * Configure printer settings using preset values, with optional overrides.
+		 *
+		 * Current default printers:
+		 *
+		 * <ul>
+		 * <li>ender3</li>
+		 * <li>prusa_mk3</li>
+		 * <li>jubilee</li>
+		 * </ul>
+		 *
+		 * Printer presets contain default values for the associated machine.
+		 * All units are in mm and seconds.
+		 *  For example, the `ender3` defaults are:
+		 *
+		 * ```
+		 * {
+		 *   name:                'ender3',
+		 *   baudRate:            115200,
+		 *   nozzleDiameter:      0.8,
+		 *   filamentDiameter:    1.75,
+		 *   maxX:                220,
+		 *   maxY:                220,
+		 *   maxZ:                250,
+		 *   extrusionMultiplier: 1,
+		 *   retractAmount:       8,
+		 *   zHopHeight:          0.2,
+		 *   printSpeed:          50,
+		 *   travelSpeed:         150,
+		 *   maxSpeedX:           200,
+		 *   maxSpeedY:           200,
+		 *   maxSpeedZ:           10,
+		 *   maxSpeedE:           60,
+		 *   maxAccelerationX:    500,
+		 *   maxAccelerationY:    500,
+		 *   maxAccelerationZ:    100,
+		 *   maxAccelerationE:    5000,
+		 *   printAcceleration:   500,
+		 *   travelAcceleration:  1000
+		 * }
+		 * ```
 		 * @group Setup
-		 * @param {string} name - Printer preset name (e.g. `'ender3'`, `'prusa'`).
+		 * @param {string} name - Printer preset name (e.g. `'ender3'`).
 		 * @param {Object} [overrides={}] - Optional settings to override the preset (e.g. `{ nozzleDiameter: 0.4 }`).
 		 * @example
 		 * function setup() {
-		 *   fab = new Fab();
-		 *   fab.setPrinter('ender3', { nozzleDiameter: 0.4 });
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 *   // set a default printer profile with manual overrides
+		 *   fab.setPrinter('ender3',  { nozzleDiameter: 0.8, retractAmount: 10 })
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		setPrinter(name, overrides = {}) {
@@ -1302,9 +1880,28 @@
 		}
 
 		/**
-		 * Render a 3D preview of the planned toolpath. Call this inside a WEBGL p5.js `draw()` loop.
+		 * Render a 3D preview of the planned toolpaths.
+		 *
+		 * Call this inside the `draw()` loop, using WEBGL mode. Note that rendering isn't necessary; removing
+		 * or commenting out the `render()` call with still generate GCode.
 		 * @group Utilities
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
 		 * function draw() {
 		 *   background(255);
 		 *   fab.render();
@@ -1487,11 +2084,24 @@
 		 */
 		/**
 		 * Home all axes and reset the extruder position.
+		 *
+		 * The machine should always be homed before sending commands. If the machine
+		 * has been homed, this command can be commented out/removed to save time. Note that
+		 * some older printers will reboot the machine upon establishing a serial connection,
+		 * therefore requiring re-homing.
 		 * @group Print control
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
 		 *   fab.autoHome();
-		 *   fab.setTemps(200, 60);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		autoHome() {
@@ -1503,14 +2113,31 @@
 		}
 
 		/**
-		 * Set nozzle and bed temperatures and wait for both to be reached before continuing.
-		 * @group Temperature
+		 * Set both the nozzle and bed temperatures and wait for both to be reached before continuing.
+		 * @group Print control
 		 * @param {number} tNozzle - Target nozzle temperature in °C.
 		 * @param {number} tBed - Target bed temperature in °C.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
 		 *   fab.autoHome();
 		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		setTemps(tNozzle, tBed) {
@@ -1531,8 +2158,32 @@
 
 		/**
 		 * Set the nozzle temperature and wait for it to be reached before continuing.
-		 * @group Temperature
+		 * @group Print control
 		 * @param {number} t - Target nozzle temperature in °C.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // Setting only the nozzle temperature
+		 *   // The bed temperature will not be affected
+		 *   fab.setNozzleTemp(200);
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		setNozzleTemp(t) {
 			const cmd = `M109 S${t}`;
@@ -1542,8 +2193,24 @@
 
 		/**
 		 * Set the bed temperature and wait for it to be reached before continuing.
-		 * @group Temperature
+		 * @group Print control
 		 * @param {number} t - Target bed temperature in °C.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // Setting only the bed temperature
+		 *   // The nozzle temperature will not be affected
+		 *   fab.setBedTemp(200);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		setBedTemp(t) {
 			const cmd = `M190 S${t}`;
@@ -1578,17 +2245,66 @@
 		}
 
 		/**
-		 * Turn the part cooling fan on at full speed.
+		 * Turn the part cooling fan on.
+		 *
+		 * The fan speed can vary from 0 (off) to 255 (fully on).
 		 * @group Print control
+		 * @param {number} [s=255] - Fan speed, 0–255.
+		 * @example
+		 *  function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   // Ramp up fan speed from 0 to 255
+		 *   for (let s = 0; s < 256; s +=1) {
+		 *     fab.fanOn(s);
+		 *   }
+		 *   // Turn fan of
+		 *   fab.fanOff();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
-		fanOn() {
-			const cmd = 'M106';
+		fanOn(s = 255) {
+			if (s < 0 || s > 255) {
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: fanOn() speed must be between 0 and 255 (got ${s}). Clamping.`
+					},
+					'*'
+				);
+				s = Math.max(0, Math.min(255, s));
+			}
+			const cmd = `M106 S${s}`;
 			this.enqueue(cmd);
 		}
 
 		/**
 		 * Turn the part cooling fan off.
 		 * @group Print control
+		 * @example
+		 *  function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   // Ramp up fan speed from 0 to 255
+		 *   for (let s = 0; s < 256; s +=1) {
+		 *     fab.fanOn(s);
+		 *   }
+		 *   // Turn fan of
+		 *   fab.fanOff();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		fanOff() {
 			const cmd = 'M107';
@@ -1596,7 +2312,7 @@
 		}
 
 		/**
-		 * Pause the print for a given duration.
+		 * Pause the print for a given duration, in seconds.
 		 * @group Print control
 		 * @param {number|null} [t=null] - Duration in seconds. Defaults to 10s if not provided.
 		 */
@@ -1606,7 +2322,10 @@
 		}
 
 		/**
-		 * Immediately stop the print and clear the command queue.
+		 * Stop the print and clear the command queue.
+		 *
+		 * Note that any buffered commands will still be executed,
+		 * resulting in a delay before actually stopping.
 		 * @group Print control
 		 */
 		stopPrint() {
@@ -1623,17 +2342,71 @@
 
 		/**
 		 * Print a priming line along the left edge of the bed to prepare the extruder.
-		 * @group Print control
-		 * @param {number} [z=0.3] - Layer height for the intro line in mm.
+		 * @group Extrusion
+		 * @param {number} [z=0.3] - Z height for the intro line in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = layerHeight; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
-		introLine(z = 0.3) {
+		introLine(z = 0.2) {
 			this.setAbsolutePositionXYZ();
 			this.moveTo(5, 20, z, 25);
-			this.moveExtrude(5, 200, z, 25);
+			this.extrudeTo(5, 200, z, 25);
 			this.moveTo(8, 200, z, 25);
-			this.moveExtrude(8, 20, z, 25);
+			this.extrudeTo(8, 20, z, 25);
 		}
 
+		/**
+		 * Move the hotend away from the part.
+		 *
+		 * Adding this command at the end of a print can make it easier to
+		 * remove it from the build plate.
+		 * @group Print control
+		 * @param {number} [z=0.3] - Z height for the intro line in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 *
+		 *   fab.presentPart();
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
 		presentPart() {
 			this.moveToY(180, 60);
 		}
@@ -1766,15 +2539,25 @@
 			this._lastGcodePosition.y = parseFloat(gcodeY);
 			this._lastGcodePosition.z = parseFloat(gcodeZ);
 
+			const feedrateMmMin =
+				v !== null
+					? this.mm_sec_to_mm_min(v)
+					: this.mm_sec_to_mm_min(isExtrude ? this._printSpeed : this._travelSpeed);
+
 			const moveType = isExtrude || e !== null ? 'G1' : 'G0';
 			this.setAbsolutePositionXYZ();
-			const cmd = `${moveType} X${gcodeX} Y${gcodeY} Z${gcodeZ} E${this._plannedPosition.e} F${this._plannedPosition.f} ${this._plannedPosition.c} `;
+			const cmd = `${moveType} X${gcodeX} Y${gcodeY} Z${gcodeZ} E${this._plannedPosition.e} F${feedrateMmMin.toFixed(2)} ${this._plannedPosition.c} `;
 			this.enqueue(cmd);
 			return cmd;
 		}
 
 		/**
 		 * Move to an absolute XYZ position without extruding.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
+		 * For retraction and/or z-hopping, see the `travel`/`travelTo` set of commands.
+		 *
 		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
@@ -1782,8 +2565,23 @@
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {string} [comment] - Optional G-code comment appended to the command.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.moveTo(100, 100, 5, 3000);
+		 *   fab.autoHome();
+		 *   // Move in Y at the default travel speed
+		 *   fab.moveTo(0, fab.centerY, 0);
+		 *
+		 *   // Move in X at a slower speed
+		 *   const slower = 50; //mm per second
+		 *   fab.moveTo(fab.centerX, fab.maxY, 0, slower)
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		moveTo(x, y, z, v, comment) {
@@ -1793,14 +2591,36 @@
 
 		/**
 		 * Move relative to the current position without extruding.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
+		 * For retraction and/or z-hopping, see the `travel`/`travelTo` set of commands.
 		 * @group Motion
 		 * @param {number} dx - Distance to move in X in mm.
 		 * @param {number} dy - Distance to move in Y in mm.
 		 * @param {number} dz - Distance to move in Z in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.move(10, 0, 0, 3000); // move 10mm in X
+		 *   fab.autoHome();
+		 *   // Move in 30mm in x, 20mm in y, and 10mm in z at the default travel speed
+		 *   fab.move(30, 20, 10);
+		 *
+		 *   // Move 30mm in x, -10mm in y, and 5mm in z at a slower speed
+		 *   const slower = 50; //mm per second
+		 *   fab.move(30, -10, 5, slower)
+		 *
+		 *   // The final position on the machine will be (60, 10, 15)
+		 *   console.log(`(${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		move(dx, dy, dz, v) {
@@ -1809,9 +2629,11 @@
 		}
 
 		/**
-		 * Move to an absolute XYZ position while extruding filament.
-		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`.
-		 * Pass an explicit `e` value in mm to override the auto-calculation entirely.
+		 * Move to an absolute XYZ position while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
@@ -1821,16 +2643,21 @@
 		 * @example
 		 * function setup() {
 		 *   createCanvas(windowWidth, windowHeight, WEBGL);
-		 *   fab = createFab();
-		 *   fab.setPrinter('ender3');
 		 * }
 		 *
 		 * function fabDraw() {
 		 *   fab.autoHome();
 		 *   fab.setTemps(200, 60);
-		 *   fab.moveTo(0, 0, 0.2, 1500);
-		 *   fab.extrudeTo(100, 0, 0.2, 1500);
-		 *   fab.extrudeTo(100, 100, 0.2, 1500);
+		 *   const layerHeight = 0.2;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   // Extrude filament at the default print speed
+		 *   fab.extrudeTo(50, fab.centerY, layerHeight);
+		 *
+		 *   // Increase extrusion multiplier and print slower
+		 *   fab.extrusionMultiplier(1.5);
+		 *   const slower = 25; // mm per second
+		 *   fab.extrudeTo(fab.centerX, 50, layerHeight, slower);
 		 * }
 		 *
 		 * function draw() {
@@ -1845,8 +2672,10 @@
 
 		/**
 		 * Move a relative distance in XYZ while extruding filament.
-		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`.
-		 * Pass an explicit `e` value in mm to override the auto-calculation entirely.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} dx - Distance to move in X in mm.
 		 * @param {number} dy - Distance to move in Y in mm.
@@ -1854,10 +2683,27 @@
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.moveTo(0, 0, 0.2, 1500);
-		 *   fab.extrude(100, 0, 0, 1500); // extrude 100mm in X
-		 *   fab.extrude(0, 100, 0, 1500); // extrude 100mm in Y
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *
+		 *   // Extrude a line moving 50mm in x, 100mm in y, and 0mm in z
+		 *   fab.extrude(50, 100, 0);
+		 *
+		 *   // Increase extrusion multiplier and print slower
+		 *   fab.extrusionMultiplier(1.5);
+		 *   const slower = 25; // mm per second
+		 *   fab.extrude(50, -50, 0, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		extrude(dx, dy, dz, v, e = null) {
@@ -1875,88 +2721,168 @@
 		}
 
 		/**
-		 * Travel to an absolute XYZ position with a filament retraction, z-hop, and re-prime.
+		 * Travel to an absolute XYZ position with filament retraction, z-hop, and re-prime.
 		 * Use this to travel between disconnected extrusion paths without stringing.
 		 * Retract distance and z-hop height are set by `retractAmount()` and `zHopHeight()`.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
 		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
-		 * @param {number} v - Feedrate in mm/min.
+		 * @param {number} v - Feedrate in mm/sec.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.extrudeTo(50, 50, 0.2, 1500);
-		 *   fab.retractTo(100, 100, 0.2, 3000); // travel without stringing
-		 *   fab.extrudeTo(150, 50, 0.2, 1500);
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   // Travel to center of the machine while retracting and z-hopping
+		 *   fab.travelTo(fab.centerX, fab.centerY, layerHeight);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
-		retractTo(x, y, z, v) {
+		travelTo(x, y, z, v) {
 			this.moveE(-1 * this._retractAmount);
-			this.moveZ(this._zHopHeight);
+			this.moveToZ(z + this._zHopHeight);
 			this.setAbsolutePositionXYZ();
 			this._moveXYZE({ x, y, z, v });
-			this.prime(this._retractAmount);
-			this.moveZ(-this._zHopHeight);
+			this._prime(this._retractAmount);
+			this.moveToZ(z);
 		}
 
 		/**
-		 * Travel a relative XYZ distance with a filament retraction, z-hop, and re-prime.
+		 * Travel a relative XYZ distance with filament retraction, z-hop, and re-prime.
 		 * Use this to travel between disconnected extrusion paths without stringing.
 		 * Retract distance and z-hop height are set by `retractAmount()` and `zHopHeight()`.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
 		 * @group Motion
 		 * @param {number} dx - Distance to move in X in mm.
 		 * @param {number} dy - Distance to move in Y in mm.
 		 * @param {number} dz - Distance to move in Z in mm.
-		 * @param {number} v - Feedrate in mm/min.
+		 * @param {number} v - Feedrate in mm/sec.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.extrudeTo(50, 50, 0.2, 1500);
-		 *   fab.retractBy(50, 50, 0, 3000); // travel 50mm in X and Y without stringing
-		 *   fab.extrudeTo(150, 50, 0.2, 1500);
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   // Move 20mm in X, 10mm in Y, and 0mm in Z while retracting and hopping
+		 *   fab.travel(20, 10, 0);
+		 *
+		 *   // Nozzle is primed and ready for subsquent commands
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
-		retractBy(dx, dy, dz, v) {
+		travel(dx, dy, dz, v) {
 			this.moveE(-1 * this._retractAmount);
-			this.moveZ(this._zHopHeight);
+			this.moveToZ(this._plannedPosition.z + this._zHopHeight);
 			this.setRelativePosition();
 			this._moveXYZE({ x: dx, y: dy, z: dz, v });
-			this.prime(this._retractAmount);
-			this.moveZ(-this._zHopHeight);
+			this._prime(this._retractAmount);
+			this.moveToZ(this._plannedPosition.z);
 		}
 
-		/** @deprecated Use `retractTo()` instead. */
+		/** @deprecated Use `travelTo()` instead. */
 		moveRetract(x, y, z, v, e = 8) {
 			window.parent.postMessage(
-				{ type: 'output', body: 'p5.fab: moveRetract() is deprecated — use retractTo() instead.' },
+				{ type: 'output', body: 'p5.fab: moveRetract() is deprecated — use travelTo() instead.' },
 				'*'
 			);
-			this.retractTo(x, y, z, v);
+			this.travelTo(x, y, z, v);
 		}
 
 		/**
-		 * Move to an absolute position with a 2mm z-hop over the travel path.
+		 * Move to an absolute XYZ position with filament retraction, and re-prime upon arrival.
+		 *
+		 * Retraction amount is set by `retractAmount()`. See `travel()`/`travelTo()`
+		 * if a z-hop is also desired. See `move()`/`moveTo()` if retraction is not desired.
+		 *
+		 *  Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
 		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
-		 * @param {number} v - Feedrate in mm/min.
+		 * @param {number} v - Feedrate in mm/sec.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.travelTo(100, 100, 0.2, 3000);
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   // Move to the center of the machine while retracting
+		 *   fab.retractTo(fab.centerX., fab.centerY, layerHeight);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
-		travelTo(x, y, z, v) {
-			this.move(0, 0, 2);
+		retractTo(x, y, z, v) {
+			this.moveE(-1 * this._retractAmount);
 			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ x: x, y: y, z: z, v: v });
-			this.move(0, 0, -2);
+			this._moveXYZE({ x, y, z, v });
+			this._prime(this._retractAmount);
 		}
 
 		/**
 		 * Move to an absolute X position without extruding.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
+		 * For retraction and/or z-hopping, see the `travel`/`travelTo` set of commands.
 		 * @group Motion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // Move in X at the default travel speed
+		 *   fab.moveToX(100);
+		 *
+		 *   // Move in X at a slower speed
+		 *   const slower = 50; //mm per second
+		 *   fab.moveToX(200, slower)
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		moveToX(x, v) {
 			this.setAbsolutePositionXYZ();
@@ -1965,9 +2891,32 @@
 
 		/**
 		 * Move to an absolute Y position without extruding.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
+		 * For retraction and/or z-hopping, see the `travel`/`travelTo` set of commands.
 		 * @group Motion
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // Move in Y at the default travel speed
+		 *   fab.moveToY(100);
+		 *
+		 *   // Move in Y at a slower speed
+		 *   const slower = 50; //mm per second
+		 *   fab.moveToY(200, slower)
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		moveToY(y, v) {
 			this.setAbsolutePositionXYZ();
@@ -1976,31 +2925,84 @@
 
 		/**
 		 * Move to an absolute Z position without extruding.
+		 *
+		 * Most printers use a leadscrew for Z, which has a much lower max speed than the belt-driven XY axes.
+		 * The `maxSpeedZ` preset value caps Z speed in firmware via `M203`.
+		 * In practice, this max Z speed is used for Z movements in general.
 		 * @group Motion
 		 * @param {number} z - Target Z position in mm.
 		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // Move in Z at the default speed
+		 *   // This will be the maxZSpeed
+		 *   fab.moveToZ(10);
+		 *
+		 *   // Move in Z at a slower speed
+		 *   const slower = 5; //mm per second
+		 *   fab.moveToX(20, slower)
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		moveToZ(z, v) {
 			this.setAbsolutePositionXYZ();
 			this._moveXYZE({ z: z, v: v });
 		}
 
-		/**
-		 * Move the extruder to an absolute E position.
-		 * @group Motion
-		 * @param {number} e - Target E position in mm.
-		 * @param {number} v - Feedrate in mm/min.
-		 */
-		moveToE(e, v) {
-			this.setAbsolutePositionXYZ();
-			this._moveXYZE({ e: e, v: v });
-		}
+		// /**
+		//  * Move the extruder to an absolute E position.
+		//  * @group Motion
+		//  * @param {number} e - Target E position in mm.
+		//  * @param {number} v - Feedrate in mm/min.
+		//  */
+		// moveToE(e, v) {
+		// 	this.setAbsolutePositionXYZ();
+		// 	this._moveXYZE({ e: e, v: v });
+		// }
 
 		/**
 		 * Move a relative distance in X without extruding.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
+		 * For retraction and/or z-hopping, see the `travel`/`travelTo` set of commands.
 		 * @group Motion
 		 * @param {number} dx - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // move 30mm in x
+		 *   fab.moveX(30);
+		 *
+		 *   // Move another 10mm in x
+		 *   fab.moveX(10);
+		 *
+		 *   // Move -5mm in x, at a slower speed
+		 *   const slower = 50; //mm per second
+		 *   fab.moveX(-10, slower)
+		 *
+		 *   // The final X position on the machine will be 30 + 10 - 5 = 35
+		 *   console.log(`(${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		moveX(dx, v) {
 			this.setRelativePosition();
@@ -2009,9 +3011,38 @@
 
 		/**
 		 * Move a relative distance in Y without extruding.
+		 *
+		 * Non-extrusion moves will be executed at the default `travelSpeed` unless manually specified.
+		 * Use `travelSpeed()` to set a new default.
+		 * For retraction and/or z-hopping, see the `travel`/`travelTo` set of commands.
 		 * @group Motion
 		 * @param {number} dy - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // move 30mm in Y
+		 *   fab.moveY(30);
+		 *
+		 *   // Move another 10mm in Y
+		 *   fab.moveY(10);
+		 *
+		 *   // Move -5mm in Y, at a slower speed
+		 *   const slower = 50; //mm per second
+		 *   fab.moveY(-10, slower)
+		 *
+		 *   // The final Y position on the machine will be 30 + 10 - 5 = 35
+		 *   console.log(`(${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		moveY(dy, v) {
 			this.setRelativePosition();
@@ -2020,9 +3051,35 @@
 
 		/**
 		 * Move a relative distance in Z without extruding.
+		 *
+		 * Most printers use a leadscrew for Z, which have a much lower max speed than the belt-driven XY axes.
+		 * The `maxSpeedZ` preset value caps Z speed in firmware via `M203`.
+		 * In practice, this max Z speed is used for Z movements in general.
 		 * @group Motion
 		 * @param {number} dz - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   // move 10mm in Z
+		 *   fab.moveZ(310);
+		 *
+		 *   // Move another 5 in Z, slower
+		 *   const slower = 5; // mm per second
+		 *   fab.moveZ(5, slower);
+		 *
+		 *   // The final X position on the machine will be 10 + 5 = 15
+		 *   console.log(`(${fab.x}, ${fab.y}, ${fab.z})`);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		moveZ(dz, v) {
 			this.setRelativePosition();
@@ -2031,7 +3088,7 @@
 
 		/**
 		 * Move the extruder a relative distance in E.
-		 * @group Motion
+		 * @group Extrusion
 		 * @param {number} de - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 */
@@ -2042,14 +3099,39 @@
 
 		/**
 		 * Move a relative distance in X while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} dx - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.extrudeX(50, 1500); // extrude a 50mm line in X
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Extrude 10mm in X
+		 *   fab.extrudeX(10);
+		 *
+		 *   // Exrude another 10mm, slower and with more extrusion
+		 *   const slower = 20;
+		 *   fab.extrusionMultiplier(1.2);
+		 *   fab.extrudeX(10, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		extrudeX(dx, v, e = null, comment = '') {
@@ -2059,6 +3141,10 @@
 
 		/**
 		 * Move a relative distance in X and Y while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} dx - Distance to move in X in mm.
 		 * @param {number} dy - Distance to move in Y in mm.
@@ -2066,8 +3152,29 @@
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.extrudeXY(30, 40, 1500); // extrude diagonally
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Extrude 10mm in X and 10mm in Y
+		 *   fab.extrudeXY(10, 10);
+		 *
+		 *   // Exrude another 10mm in X, -5mm in Y, slower and with more extrusion
+		 *   const slower = 20;
+		 *   fab.extrusionMultiplier(1.2);
+		 *   fab.extrudeXY(10, -5, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		extrudeXY(dx, dy, v, e = null, comment = '') {
@@ -2077,10 +3184,39 @@
 
 		/**
 		 * Move a relative distance in Y while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} dy - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Extrude 10mm in Y
+		 *   fab.extrudeY(10);
+		 *
+		 *   // Exrude another 10mm in Y, slower and with more extrusion
+		 *   const slower = 20;
+		 *   fab.extrusionMultiplier(1.2);
+		 *   fab.extrudeY(10, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		extrudeY(dy, v, e = null) {
 			this.setRelativePosition();
@@ -2089,10 +3225,37 @@
 
 		/**
 		 * Move a relative distance in Z while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Most printers use a leadscrew for Z, which have a much lower max speed than the belt-driven XY axes.
+		 * The `maxSpeedZ` preset value caps Z speed in firmware via `M203`.
+		 * In practice, this max Z speed is used for Z movements in general.
 		 * @group Extrusion
 		 * @param {number} dz - Distance to move in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Move very slowly straight up, while extruding
+		 *   const slow = 1; // mm per second
+		 *   fab.extrudeZ(10, slow);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		extrudeZ(dz, v, e = null) {
 			this.setRelativePosition();
@@ -2101,11 +3264,40 @@
 
 		/**
 		 * Move to an absolute X position while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Extrude to X = 110mm
+		 *   fab.extrudeToX(110);
+		 *
+		 *   // Exrude another 10mm, slower and with more extrusion
+		 *   const slower = 20;
+		 *   fab.extrusionMultiplier(1.2);
+		 *   fab.extrudeToX(120, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		extrudeToX(x, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
@@ -2114,11 +3306,40 @@
 
 		/**
 		 * Move to an absolute Y position while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Extrude to Y = 110mm
+		 *   fab.extrudeToY(110);
+		 *
+		 *   // Exrude another 10mm, slower and with more extrusion
+		 *   const slower = 20;
+		 *   fab.extrusionMultiplier(1.2);
+		 *   fab.extrudeToY(120, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		extrudeToY(y, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
@@ -2127,6 +3348,10 @@
 
 		/**
 		 * Move to an absolute XY position while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Print moves will be executed at the default `printSpeed` unless manually specified.
 		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
@@ -2134,8 +3359,29 @@
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.extrudeToXY(100, 100, 1500); // extrude to absolute position
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Extrude to X= 110mm, Y = 110mm
+		 *   fab.extrudeToXY(110, 110);
+		 *
+		 *   // Exrude to 120 in X, 90 in Y, slower and with more extrusion
+		 *   const slower = 20;
+		 *   fab.extrusionMultiplier(1.2);
+		 *   fab.extrudeToXY(120, 90, slower);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		extrudeToXY(x, y, v, e = null, comment = '') {
@@ -2145,11 +3391,38 @@
 
 		/**
 		 * Move to an absolute Z position while extruding.
+		 *
+		 * Extrusion amount is calculated automatically from the move distance, scaled by `extrusionMultiplier`. If an explicit extrusion amount is specified, `extrusionMultiplier` is ignored.
+		 *
+		 * Most printers use a leadscrew for Z, which have a much lower max speed than the belt-driven XY axes.
+		 * The `maxSpeedZ` preset value caps Z speed in firmware via `M203`.
+		 * In practice, this max Z speed is used for Z movements in general.
 		 * @group Extrusion
 		 * @param {number} z - Target Z position in mm.
 		 * @param {number} v - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount in mm. Calculated automatically if null.
 		 * @param {string} [comment=''] - Optional G-code comment.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Get to a starting position
+		 *   fab.travelTo(100, 100, 0.2);
+		 *
+		 *   // Move very slowly straight up, while extruding
+		 *   const slow = 1; // mm per second
+		 *   fab.extrudeToZ(10, slow);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
 		 */
 		extrudeToZ(z, v, e = null, comment = '') {
 			this.setAbsolutePositionXYZ();
@@ -2157,8 +3430,8 @@
 		}
 
 		/**
-		 * Extrude a circle centered at (x, y) at the given Z height.
-		 * @group Utilities
+		 * Extrude a circle with diameter `d` centered at (x, y) at the given Z height.
+		 * @group Extrusion
 		 * @param {number} x - Center X position in mm.
 		 * @param {number} y - Center Y position in mm.
 		 * @param {number} z - Z height in mm.
@@ -2166,14 +3439,32 @@
 		 * @param {number} [v] - Feedrate in mm/min.
 		 * @param {number|null} [e=null] - Extrusion amount per segment. Calculated automatically if null.
 		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
 		 * function fabDraw() {
-		 *   fab.circle(110, 110, 0.2, 20, 1500);
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   const height = 50;
+		 *   const diameter = 50;
+		 *
+		 *   fab.introLine(layerHeight);
+		 *   for (let z = 0; z < height; z += layerHeight) {
+		 *     fab.circle(fab.centerX, fab.centerY, z, diameter);
+		 *   }
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
 		 * }
 		 */
 		circle(x, y, z, d, v, e = null) {
 			const r = d / 2;
 			const segments = Math.max(16, Math.ceil(Math.PI * d));
-			this.retractTo(x + r, y, z, v);
+			this.travelTo(x + r, y, z, v);
 			for (let i = 1; i <= segments; i++) {
 				const angle = (i / segments) * Math.PI * 2;
 				this.extrudeToXY(x + r * Math.cos(angle), y + r * Math.sin(angle), v, e);
@@ -2181,12 +3472,168 @@
 		}
 
 		/**
-		 * Set the feedrate for subsequent moves. Persistent — applies to all moves until changed, like `strokeWeight()` in p5.js.
-		 * @group Configuration
-		 * @param {number} v - Feedrate in mm/sec.
+		 * Set both the print and travel speed defaults simultaneously.
+		 * Equivalent to calling `printSpeed(printV)` and `travelSpeed(travelV)`.
+		 * One argument sets both to the same value; two arguments set each independently.
+		 * Resets to printer profile defaults at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 *
+		 *  All speeds will be clamped by the `maxSpeed` settings for each axis.
+		 * @group Print control
+		 * @param {number} printV - Print speed in mm/sec (used for extrusion moves).
+		 * @param {number} [travelV=printV] - Travel speed in mm/sec (used for non-extrusion moves). Defaults to `printV` if omitted.
 		 */
-		speed(v) {
-			this._moveXYZE({ v: v });
+		speed(printV, travelV = printV) {
+			this._printSpeed = printV;
+			this._travelSpeed = travelV;
+		}
+
+		/**
+		 * Set the default feedrate for extrusion moves.
+		 * Applies to all subsequent extrusion moves until changed. Inline `v` on an individual extrusion command overrides for that move only.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 *
+		 * All speeds will be clamped by the `maxSpeed` settings for each axis.
+		 * @group Print control
+		 * @param {number} v - Print speed in mm/sec.
+		 */
+		printSpeed(v) {
+			this._printSpeed = v;
+		}
+
+		/**
+		 * Set the default feedrate for moves without extrusion.
+		 * Applies to all subsequent travel moves until changed. Inline `v` on an individual move overrides for that move only.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 *
+		 *  All speeds will be clamped by the `maxSpeed` settings for each axis.
+		 * @group Print control
+		 * @param {number} v - Travel speed in mm/sec.
+		 */
+		travelSpeed(v) {
+			this._travelSpeed = v;
+		}
+
+		/**
+		 * Set the maximum feedrate for the X axis. Sent to firmware as `M203 X…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max X speed in mm/s.
+		 */
+		maxSpeedX(v) {
+			this._maxSpeedX = v;
+			this._setMaxSpeeds();
+		}
+
+		/**
+		 * Set the maximum feedrate for the Y axis. Sent to firmware as `M203 Y…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max Y speed in mm/s.
+		 */
+		maxSpeedY(v) {
+			this._maxSpeedY = v;
+			this._setMaxSpeeds();
+		}
+
+		/**
+		 * Set the maximum feedrate for the Z axis. Sent to firmware as `M203 Z…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max Z speed in mm/s.
+		 */
+		maxSpeedZ(v) {
+			this._maxSpeedZ = v;
+			this._setMaxSpeeds();
+		}
+
+		/**
+		 * Set the maximum feedrate for the extruder axis. Sent to firmware as `M203 E…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max E speed in mm/s.
+		 */
+		maxSpeedE(v) {
+			this._maxSpeedE = v;
+			this._setMaxSpeeds();
+		}
+
+		/**
+		 * Set the maximum acceleration for the X axis. Sent to firmware as `M201 X…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max X acceleration in mm/s².
+		 */
+		maxAccelerationX(v) {
+			this._maxAccelerationX = v;
+			this._setMaxAccelerations();
+		}
+
+		/**
+		 * Set the maximum acceleration for the Y axis. Sent to firmware as `M201 Y…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max Y acceleration in mm/s².
+		 */
+		maxAccelerationY(v) {
+			this._maxAccelerationY = v;
+			this._setMaxAccelerations();
+		}
+
+		/**
+		 * Set the maximum acceleration for the Z axis. Sent to firmware as `M201 Z…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max Z acceleration in mm/s².
+		 */
+		maxAccelerationZ(v) {
+			this._maxAccelerationZ = v;
+			this._setMaxAccelerations();
+		}
+
+		/**
+		 * Set the maximum acceleration for the extruder axis. Sent to firmware as `M201 E…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Configuration
+		 * @param {number} v - Max E acceleration in mm/s².
+		 */
+		maxAccelerationE(v) {
+			this._maxAccelerationE = v;
+			this._setMaxAccelerations();
+		}
+
+		/**
+		 * Set the acceleration used for print moves. Sent to firmware as `M204 P…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Print control
+		 * @param {number} v - Print acceleration in mm/s².
+		 */
+		printAcceleration(v) {
+			this._printAcceleration = v;
+			this._setMaxAccelerations();
+		}
+
+		/**
+		 * Set the acceleration used for travel moves. Sent to firmware as `M204 T…`.
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Print control
+		 * @param {number} v - Travel acceleration in mm/s².
+		 */
+		travelAcceleration(v) {
+			this._travelAcceleration = v;
+			this._setMaxAccelerations();
 		}
 
 		/** @deprecated Use `speed()` instead. */
@@ -2198,13 +3645,20 @@
 			this.speed(v);
 		}
 
-		/**
-		 * Prime the extruder by pushing filament forward. Used after a retraction.
-		 * @group Utilities
-		 * @param {number} de - Amount to prime in mm.
-		 * @param {number} v - Feedrate in mm/min.
-		 */
-		prime(de, v) {
+		_setMaxSpeeds() {
+			this.enqueue(
+				`M203 X${this._maxSpeedX} Y${this._maxSpeedY} Z${this._maxSpeedZ} E${this._maxSpeedE}`
+			);
+		}
+
+		_setMaxAccelerations() {
+			this.enqueue(
+				`M201 X${this._maxAccelerationX} Y${this._maxAccelerationY} Z${this._maxAccelerationZ} E${this._maxAccelerationE}`
+			);
+			this.enqueue(`M204 P${this._printAcceleration} T${this._travelAcceleration}`);
+		}
+
+		_prime(de, v) {
 			// To prime after a retraction, add ;prime comment to filter in rendering
 			this.setRelativePosition();
 			this._moveXYZE({ e: de, v: v });
@@ -2223,19 +3677,9 @@
 		}
 
 		/**
-		 * Set the starting acceleration for print moves.
-		 * @group Configuration
-		 * @param {number} a - Acceleration in mm/s².
-		 */
-		setStartAcceleration(a) {
-			var cmd = `M204 P${a};`;
-			this.enqueue(cmd);
-		}
-
-		/**
 		 * Calculate the extrusion amount needed to move to an absolute XYZ position
 		 * based on the current nozzle and filament diameters.
-		 * @group Utilities
+		 * @group Extrusion
 		 * @param {number} x - Target X position in mm.
 		 * @param {number} y - Target Y position in mm.
 		 * @param {number} z - Target Z position in mm.
@@ -2261,7 +3705,7 @@
 
 		/**
 		 * Select a tool by index (for multi-tool machines like Jubilee).
-		 * @group Utilities
+		 * @group Motion
 		 * @param {number} tool_idx - Zero-based tool index.
 		 */
 		pickupTool(tool_idx) {

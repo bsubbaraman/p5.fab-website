@@ -6,6 +6,7 @@
 	import { Prec } from '@codemirror/state';
 	import { templateSketch } from '$lib/examples/examples';
 	import { flashCode } from '$lib/flash.js';
+	import { evalPrefix } from '$lib/evalPrefix.js';
 
 	let code = $state('');
 	let editorView = null;
@@ -28,15 +29,6 @@
 		output = [];
 		if (editorView) flashCode(editorView);
 
-		const evalPrefix =
-			`(() => {\n` +
-			`    return () => {\n` +
-			`      console.log = (function(){\n` +
-			`        return function (txt) {\n` +
-			`          window.parent.postMessage({ type: "output", body: txt }, '*');\n` +
-			`        };\n` +
-			`      })();\n` +
-			`      `;
 
 		const wrapped =
 			evalPrefix +
