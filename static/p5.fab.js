@@ -134,6 +134,7 @@
 			_fab._travelAcceleration = _fab._defaultTravelAcceleration;
 			_fab._transformOffset = { x: 0, y: 0, z: 0 };
 			_fab._stateStack = [];
+			_fab._deprecationWarned = new Set();
 			_fab._lastGcodePosition = { x: 0, y: 0, z: 0 };
 			setTimeout(() => {
 				window.parent.postMessage({ type: 'parsing_start' }, '*');
@@ -493,6 +494,9 @@
 			// Push/pop state
 			this._transformOffset = { x: 0, y: 0, z: 0 };
 			this._stateStack = [];
+
+			// Deprecation warnings — shown once per fabDraw call
+			this._deprecationWarned = new Set();
 
 			// Rendering (camera deferred to _initCamera — needs a WEBGL canvas)
 			this.vertices = [];
@@ -2713,10 +2717,13 @@
 
 		/** @deprecated Use `extrudeTo()` instead. */
 		moveExtrude(x, y, z, v, e = null) {
-			window.parent.postMessage(
-				{ type: 'output', body: 'p5.fab: moveExtrude() is deprecated — use extrudeTo() instead.' },
-				'*'
-			);
+			if (!this._deprecationWarned.has('moveExtrude')) {
+				this._deprecationWarned.add('moveExtrude');
+				window.parent.postMessage(
+					{ type: 'output', body: 'p5.fab: moveExtrude() is deprecated — use extrudeTo() instead.' },
+					'*'
+				);
+			}
 			this.extrudeTo(x, y, z, v, e);
 		}
 
@@ -2808,10 +2815,13 @@
 
 		/** @deprecated Use `travelTo()` instead. */
 		moveRetract(x, y, z, v, e = 8) {
-			window.parent.postMessage(
-				{ type: 'output', body: 'p5.fab: moveRetract() is deprecated — use travelTo() instead.' },
-				'*'
-			);
+			if (!this._deprecationWarned.has('moveRetract')) {
+				this._deprecationWarned.add('moveRetract');
+				window.parent.postMessage(
+					{ type: 'output', body: 'p5.fab: moveRetract() is deprecated — use travelTo() instead.' },
+					'*'
+				);
+			}
 			this.travelTo(x, y, z, v);
 		}
 
@@ -3638,10 +3648,13 @@
 
 		/** @deprecated Use `speed()` instead. */
 		setSpeed(v) {
-			window.parent.postMessage(
-				{ type: 'output', body: 'p5.fab: setSpeed() is deprecated — use speed() instead.' },
-				'*'
-			);
+			if (!this._deprecationWarned.has('setSpeed')) {
+				this._deprecationWarned.add('setSpeed');
+				window.parent.postMessage(
+					{ type: 'output', body: 'p5.fab: setSpeed() is deprecated — use speed() instead.' },
+					'*'
+				);
+			}
 			this.speed(v);
 		}
 
