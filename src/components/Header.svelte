@@ -72,7 +72,7 @@
 				<a href="/sketch/new" class:active={page.url.pathname == '/create'}>Create</a>
 			</div>
 			<div class="menu-item">
-				<a href="https://machineagency.github.io/p5.fab-docs/" target="_blank">Docs</a>
+				<a href="https://docs.copypastes.xyz" target="_blank">Docs</a>
 			</div>
 			<div class="menu-item">
 				<a href="/about" class:active={page.url.pathname == '/about'}>About</a>

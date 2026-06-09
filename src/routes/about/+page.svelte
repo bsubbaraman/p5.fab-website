@@ -23,7 +23,7 @@
 			for creative code, the goal is to cultivate a community around machine and material explorations.
 			To get started, check out the
 			<a
-				href="https://machineagency.github.io/p5.fab-docs/docs/resources/"
+				href="https://docs.copypastes.xyz/resources/"
 				target="_blank"
 				rel="noopener noreferrer">tutorials</a
 			>, <a href="https://www.copypastes.xyz" target="_blank" rel="noopener noreferrer">browse</a>
