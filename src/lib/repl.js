@@ -1,4 +1,5 @@
 import { Parser } from "acorn";
+import { sandboxOrigin } from "$lib/sandbox.js";
 import { editorState, store } from "../store/state.svelte.js";
 import { flashCode } from "$lib/flash.js";
 import { highlightErrorLine, clearErrorHighlight } from "$lib/errorHighlight.js";
@@ -7,7 +8,7 @@ import { evalPrefix } from "$lib/evalPrefix.js";
 
 export function evalCode(code) {
   try {
-    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code }, '*');
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code }, sandboxOrigin());
   }
   catch (error) {
     console.error(error);
@@ -48,7 +49,7 @@ export async function evalSketch(sketchCode) {
       `\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
       `\n      try { window.windowResized = windowResized } catch (e) { console.log("no resize") };` +
       `\n    }\n  })()()`
-    }, '*');
+    }, sandboxOrigin());
 
     checkp5Init();
 
@@ -79,8 +80,8 @@ export async function evalSketch(sketchCode) {
                 }
             }
         })()`
-      }, '*');
-      editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `reloadSketch()` }, '*');
+      }, sandboxOrigin());
+      editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `reloadSketch()` }, sandboxOrigin());
     }
   } catch (e) {
     setOutput(false, [{ type: "error", body: e.toString() }]);
@@ -138,8 +139,8 @@ function injectTryCatch(sketchCode, prefixLines) {
 
 function checkp5Init() {
   if (!editorState.p5Initialized) {
-    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `try { remove() } catch (e) { window.parent.postMessage({ type: "debug", body: "remove() failed"}, '*'); }` }, '*');
-    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `new p5()` }, '*');
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `try { remove() } catch (e) { window.parent.postMessage({ type: "debug", body: "remove() failed"}, '*'); }` }, sandboxOrigin());
+    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `new p5()` }, sandboxOrigin());
     editorState.p5Initialized = true;
   }
 }

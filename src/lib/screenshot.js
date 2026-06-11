@@ -1,3 +1,5 @@
+import { sandboxOrigin } from './sandbox.js';
+
 export function requestIframeScreenshot(iframe) {
     return new Promise((resolve) => {
         function handler(e) {
@@ -7,6 +9,6 @@ export function requestIframeScreenshot(iframe) {
             resolve(e.data.dataURL);
         }
         window.addEventListener('message', handler);
-        iframe.contentWindow.postMessage({ type: 'screenshot' }, '*');
+        iframe.contentWindow.postMessage({ type: 'screenshot' }, sandboxOrigin());
     });
 }

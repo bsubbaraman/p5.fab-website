@@ -18,6 +18,7 @@
 	import EditorLog from '../../../components/EditorLog.svelte';
 	import MachineStatus from '../../../components/MachineStatus.svelte';
 	import { doGcodeDownload } from '$lib/download.js';
+	import { previewUrl } from '$lib/sandbox.js';
 
 	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
 	let initIframe = $state(false);
@@ -197,7 +198,7 @@
 							title="fab"
 							onload={handleIframeLoad}
 							id="preview"
-							src="/preview.html"
+							src={previewUrl()}
 							sandbox="allow-scripts allow-same-origin allow-downloads"
 							allow="serial"
 						></iframe>

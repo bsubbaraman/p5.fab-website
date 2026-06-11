@@ -137,25 +137,30 @@
 		</div>
 
 		<script defer>
+			// Origin of the parent editor, passed as a query param so we can target
+			// replies precisely instead of broadcasting with '*'. Absent (=> '*') when
+			// loaded same-origin by the embed route, which keeps its existing behavior.
+			const PARENT_ORIGIN = new URLSearchParams(location.search).get('parentOrigin') || '*';
 			addEventListener(
 				'DOMContentLoaded',
 				(e) => {
-					window.parent.postMessage({ type: 'ready', body: '' }, '*');
+					window.parent.postMessage({ type: 'ready', body: '' }, PARENT_ORIGIN);
 				},
 				{ once: true }
 			);
 
 			window.addEventListener('message', (e) => {
 				if (e.source !== window.parent) return;
+				if (PARENT_ORIGIN !== '*' && e.origin !== PARENT_ORIGIN) return;
 				if (e.data?.type === 'eval') {
 					eval(e.data.code);
 				} else if (e.data?.type === 'screenshot') {
 					const canvas = document.querySelector('canvas');
 					const dataURL = canvas ? canvas.toDataURL('image/jpeg', 0.8) : null;
-					window.parent.postMessage({ type: 'screenshot_data', dataURL }, '*');
+					window.parent.postMessage({ type: 'screenshot_data', dataURL }, PARENT_ORIGIN);
 				} else if (e.data?.type === 'get_gcode') {
 					const gcode = typeof fab !== 'undefined' && fab ? fab.gcode : '';
-					window.parent.postMessage({ type: 'gcode_data', gcode: gcode || '' }, '*');
+					window.parent.postMessage({ type: 'gcode_data', gcode: gcode || '' }, PARENT_ORIGIN);
 				}
 			});
 

@@ -23,7 +23,11 @@ import { highlightErrorLine } from '$lib/errorHighlight.js';
 export function setupMessages() {
     // Setup messages with iframe
     window.addEventListener('message', function (e) {
-        if (e.origin !== window.location.origin && e.origin !== 'null') return;
+        // Only accept messages from our sketch iframe's own window. This is
+        // origin-independent, so it holds when the sketch runs on the separate
+        // sandbox origin in production.
+        const sketchWin = editorState.sketchWindow?.contentWindow;
+        if (!sketchWin || e.source !== sketchWin) return;
         const message = e.data;
         if (!message) return;
 

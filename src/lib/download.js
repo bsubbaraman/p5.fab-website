@@ -1,5 +1,6 @@
 import { editorState } from '../store/state.svelte.js';
 import { normalizeCode } from './repl.js';
+import { sandboxOrigin } from './sandbox.js';
 
 function triggerDownload(content, filename, mimeType) {
 	const blob = new Blob([content], { type: mimeType });
@@ -25,7 +26,7 @@ export async function doGcodeDownload() {
 			resolve(e.data.gcode);
 		}
 		window.addEventListener('message', handler);
-		iframe.contentWindow.postMessage({ type: 'get_gcode' }, '*');
+		iframe.contentWindow.postMessage({ type: 'get_gcode' }, sandboxOrigin());
 	});
 	triggerDownload(gcode || '', editorState.projectTitle + '.gcode', 'text/plain');
 }
