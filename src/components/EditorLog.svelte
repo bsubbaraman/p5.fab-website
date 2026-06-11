@@ -115,7 +115,7 @@
 					class="input"
 					name="images"
 					onchange={handleFileSelect}
-					accept="image/png, image/jpeg, .js"
+					accept="image/png, image/jpeg"
 					multiple
 				/>
 				<div id="selectedFiles"></div>
