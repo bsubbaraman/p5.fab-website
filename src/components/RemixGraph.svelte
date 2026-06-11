@@ -3,6 +3,7 @@
 	import * as d3 from 'd3';
 	import { db } from '../dbConfig.js';
 	import { collection, getDocs } from 'firebase/firestore';
+	import { escapeHTML } from '$lib/escapeHtml.js';
 
 	let { objectID } = $props();
 	let graphInitialized = $state(false);
@@ -135,7 +136,9 @@
 
 		node
 			.on('mouseover', (event, d) => {
-				tooltip.style('opacity', 1).html(`<b>${d.name}</b><br/>by <b>${d.username}</b>`);
+				tooltip
+					.style('opacity', 1)
+					.html(`<b>${escapeHTML(d.name)}</b><br/>by <b>${escapeHTML(d.username)}</b>`);
 			})
 			.on('mousemove', (event) => {
 				tooltip.style('left', event.pageX + 25 + 'px').style('top', event.pageY + 'px');

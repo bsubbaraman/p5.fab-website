@@ -25,7 +25,9 @@
 		for (var i = 0; i < files.length; i++) {
 			var f = files[i];
 			console.log(f);
-			selectedFiles.innerHTML += f.name + '<br/>';
+			const nameLine = document.createElement('div');
+			nameLine.textContent = f.name;
+			selectedFiles.appendChild(nameLine);
 		}
 	}
 
