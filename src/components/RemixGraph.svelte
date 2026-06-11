@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import * as d3 from 'd3';
 	import { db } from '../dbConfig.js';
-	import { collection, getDocs } from 'firebase/firestore';
+	import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 	import { escapeHTML } from '$lib/escapeHtml.js';
 
 	let { objectID } = $props();
@@ -205,69 +205,53 @@
 		}
 	}
 
-	let allPostsCache = null;
-
-	async function loadAllPosts() {
-		if (allPostsCache) return allPostsCache;
-		const snap = await getDocs(collection(db, 'posts'));
-		const result = {};
-		snap.forEach((doc) => {
-			if (doc.id !== 'allPosts') result[doc.id] = doc.data();
-		});
-		allPostsCache = result;
-		return result;
+	// Build just the connected remix tree (root + all descendants) by following the
+	// parentSketch links, instead of downloading the whole posts collection. Reads
+	// scale with the size of the tree, not the collection.
+	function toNode(id, data) {
+		return { id, img: data.thumbnail ?? data.files?.[0] ?? null, ...data };
 	}
 
-	function findConnectedPosts(postID, allPostsRaw) {
-		const allPostsData = Object.entries(allPostsRaw).map(([id, post]) => ({
-			id,
-			img: post.thumbnail ?? post.files?.[0] ?? null,
-			name: post.name,
-			username: post.username,
-			...post
-		}));
-
-		const idToPost = {};
-		const childrenMap = {};
-
-		allPostsData.forEach((post) => {
-			idToPost[post.id] = post;
-			if (post.parentSketch) {
-				if (!childrenMap[post.parentSketch]) {
-					childrenMap[post.parentSketch] = [];
-				}
-				childrenMap[post.parentSketch].push(post);
-			}
-		});
-
-		// Walk up to the root/original post
-		let rootID = postID;
-		while (idToPost[rootID] && idToPost[rootID].parentSketch) {
-			rootID = idToPost[rootID].parentSketch;
+	async function getConnectedPosts(startID) {
+		// 1. Walk up parentSketch to the originating post (highest existing ancestor).
+		let currentID = startID;
+		let rootID = null;
+		let rootData = null;
+		const seenUp = new Set();
+		while (currentID && !seenUp.has(currentID)) {
+			seenUp.add(currentID);
+			const snap = await getDoc(doc(db, 'posts', currentID));
+			if (!snap.exists()) break;
+			rootID = currentID;
+			rootData = snap.data();
+			if (!rootData.parentSketch) break;
+			currentID = rootData.parentSketch;
 		}
+		if (!rootData) return [];
 
-		// Step 3: depth first search to find all descendants (remixes)
-		const connectedPosts = [];
-		const visited = new Set();
-
-		function dfs(currentID) {
-			if (visited.has(currentID)) return;
-			visited.add(currentID);
-
-			const post = idToPost[currentID];
-			if (post) {
-				connectedPosts.push(post);
+		// 2. BFS down via where(parentSketch == id) queries, one level at a time.
+		//    Children come back in the query (no second fetch); a visited set guards cycles.
+		const nodes = { [rootID]: toNode(rootID, rootData) };
+		const visited = new Set([rootID]);
+		let frontier = [rootID];
+		while (frontier.length) {
+			const childSnaps = await Promise.all(
+				frontier.map((id) =>
+					getDocs(query(collection(db, 'posts'), where('parentSketch', '==', id)))
+				)
+			);
+			const next = [];
+			for (const snap of childSnaps) {
+				snap.forEach((d) => {
+					if (visited.has(d.id)) return;
+					visited.add(d.id);
+					nodes[d.id] = toNode(d.id, d.data());
+					next.push(d.id);
+				});
 			}
-
-			const children = childrenMap[currentID] || [];
-			for (const child of children) {
-				dfs(child.id);
-			}
+			frontier = next;
 		}
-
-		dfs(rootID);
-
-		return connectedPosts;
+		return Object.values(nodes);
 	}
 
 	function formatGraphData(connectedPosts) {
@@ -320,8 +304,7 @@
 	}
 
 	async function makeRemixGraph() {
-		const allPostsRaw = await loadAllPosts();
-		const connectedPosts = findConnectedPosts(objectID, allPostsRaw);
+		const connectedPosts = await getConnectedPosts(objectID);
 		const formatted = formatGraphData(connectedPosts);
 		renderGraph(formatted);
 		extractAvailableMaterials(formatted.nodes);
