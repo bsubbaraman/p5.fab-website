@@ -55,34 +55,32 @@
 			return;
 		}
 
-		var userFavorites = store.favorites;
-		const idx = userFavorites.indexOf(objectID);
-		var counter;
-		if (idx > -1) {
-			userFavorites.splice(idx, 1);
-			counter = -1;
-			// postData.favorites -= 1;
-		} else {
-			userFavorites.push(objectID);
-			counter = 1;
-			// postData.favorites += 1;
-		}
-
-		// Update the post: count + this user's favoritedBy entry, atomically, so the
-		// security rule can verify the ±1 corresponds to toggling your own like.
 		const uid = store.user.uid;
-		await updateDoc(docRef, {
-			favorites: increment(counter),
-			[`favoritedBy.${uid}`]: counter > 0 ? true : deleteField()
-		});
+		const liked = store.favorites.includes(objectID);
+		const counter = liked ? -1 : 1;
 
-		const userRef = doc(db, 'users', store.user.uid);
-		await updateDoc(userRef, {
-			favorites: userFavorites
-		});
+		try {
+			// Update the post: count + this user's favoritedBy entry, atomically, so the
+			// security rule can verify the ±1 corresponds to toggling your own like.
+			await updateDoc(docRef, {
+				favorites: increment(counter),
+				[`favoritedBy.${uid}`]: counter > 0 ? true : deleteField()
+			});
 
-		store.favorites = userFavorites;
-		postData.favorites += counter; // so the page displays correct value, but don't send to db
+			// Mirror into the user's favorites array (drives heart state across the app).
+			const nextFavorites = liked
+				? store.favorites.filter((id) => id !== objectID)
+				: [...store.favorites, objectID];
+			const userRef = doc(db, 'users', uid);
+			await updateDoc(userRef, { favorites: nextFavorites });
+
+			// Commit local state only after both writes succeed, so a rejected write
+			// can't leave the heart toggled while the database is unchanged.
+			store.favorites = nextFavorites;
+			postData.favorites += counter;
+		} catch (err) {
+			console.error('Like failed:', err);
+		}
 	}
 
 	function toggleShareScreen() {
