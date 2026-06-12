@@ -2,7 +2,7 @@
 	import Header from '../../../components/Header.svelte';
 	import { store } from '../../../store/state.svelte.js';
 	import { db } from '../../../dbConfig';
-	import { getDoc, doc, updateDoc, deleteDoc, increment, arrayRemove } from 'firebase/firestore';
+	import { getDoc, doc, updateDoc, deleteDoc, increment, arrayRemove, deleteField } from 'firebase/firestore';
 	import { ref, listAll, deleteObject } from 'firebase/storage';
 	import { storage } from '../../../dbConfig';
 	import { toggleAuthContainer } from '$lib/events/auth';
@@ -68,9 +68,12 @@
 			// postData.favorites += 1;
 		}
 
-		// Update database & store
+		// Update the post: count + this user's favoritedBy entry, atomically, so the
+		// security rule can verify the ±1 corresponds to toggling your own like.
+		const uid = store.user.uid;
 		await updateDoc(docRef, {
-			favorites: increment(counter)
+			favorites: increment(counter),
+			[`favoritedBy.${uid}`]: counter > 0 ? true : deleteField()
 		});
 
 		const userRef = doc(db, 'users', store.user.uid);

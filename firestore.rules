@@ -24,7 +24,7 @@ service cloud.firestore {
         && validPost(request.resource.data);
       // Owner can update their own post (but cannot change authorship)
       // Others can only increment likes or add a fork
-      allow update: if (isAuthenticated() && incrementingLikeCount())
+      allow update: if (isAuthenticated() && togglingOwnLike())
         || (isAuthenticated() && addingAFork())
         || (request.auth.uid == request.resource.data.authorUID
           && request.auth.uid == resource.data.authorUID
@@ -64,11 +64,22 @@ service cloud.firestore {
       && data.code is string && data.code.size() <= 100000;
   }
 
-  function incrementingLikeCount() {
-    return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['favorites'])
-      && (request.resource.data.favorites == resource.data.favorites + 1
-        || request.resource.data.favorites == resource.data.favorites - 1);
+  // A signed-in user may only move a post's like count by toggling their OWN
+  // entry in the favoritedBy map: +1 iff their uid goes absent->present, -1 iff
+  // present->absent, with no other favoritedBy key or post field changed. This makes
+  // one-like-per-user enforceable in the rule (the client toggle is not a boundary).
+  function togglingOwnLike() {
+    let uid = request.auth.uid;
+    let before = resource.data;
+    let after = request.resource.data;
+    let bFav = ('favoritedBy' in before) ? before.favoritedBy : {};
+    let aFav = ('favoritedBy' in after) ? after.favoritedBy : {};
+    return after.diff(before).affectedKeys().hasOnly(['favorites', 'favoritedBy'])
+      && aFav.diff(bFav).affectedKeys().hasOnly([uid])
+      && (
+        (after.favorites == before.favorites + 1 && !(uid in bFav) && (uid in aFav))
+        || (after.favorites == before.favorites - 1 && (uid in bFav) && !(uid in aFav))
+      );
   }
 
   function addingAFork() {
