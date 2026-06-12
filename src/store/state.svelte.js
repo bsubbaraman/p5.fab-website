@@ -55,13 +55,22 @@ export const authHandlers = {
     signup: async (email, password, username) => {
         const display = username.trim();
         const key = display.toLowerCase();
+        const usernameRef = doc(db, 'usernames', key);
+
+        // 0. Pre-check availability BEFORE creating an auth account, so claiming a taken
+        //    name never signs the user in or flips the header. The create-only rule in
+        //    step 1 is still the real guard against the check-then-claim race.
+        const pre = await getDoc(usernameRef);
+        if (pre.exists()) {
+            throw new Error('username-taken');
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         const uid = user.uid;
 
         // 1. Claim the username registry doc — lowercase key (uniqueness), original-case
         //    display. The rule is create-only, so writing over an existing key is denied.
-        const usernameRef = doc(db, 'usernames', key);
         try {
             await setDoc(usernameRef, { uid, display, created: serverTimestamp() });
         } catch (err) {
@@ -69,10 +78,10 @@ export const authHandlers = {
             if (snap.exists() && snap.data().uid === uid) {
                 // Orphaned claim we already own (earlier crash) — resume.
             } else if (snap.exists()) {
-                await deleteUser(user); // name is taken by someone else
+                await deleteUser(user).catch(() => {}); // someone else got it in the race
                 throw new Error('username-taken');
             } else {
-                await deleteUser(user); // claim failed for another reason — surface it
+                await deleteUser(user).catch(() => {}); // claim failed for another reason
                 throw err;
             }
         }
@@ -87,8 +96,8 @@ export const authHandlers = {
             });
         } catch (err) {
             // Roll back the claim and the auth account so nothing is left dangling.
-            await deleteDoc(usernameRef);
-            await deleteUser(user);
+            await deleteDoc(usernameRef).catch(() => {});
+            await deleteUser(user).catch(() => {});
             throw err;
         }
 

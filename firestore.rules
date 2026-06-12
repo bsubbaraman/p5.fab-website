@@ -3,6 +3,19 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // True iff `display` (mixed-case) names a registry doc owned by uid whose canonical
+    // display matches exactly. The registry is keyed by the lowercase, so look it up there.
+    // Defined INSIDE this match block so $(database) is in scope for exists()/get().
+    function ownsUsername(display, uid) {
+      let key = display.lower();
+      return display is string
+        && display.size() >= 3 && display.size() <= 30
+        && display.matches('^[a-zA-Z0-9_]+$')
+        && exists(/databases/$(database)/documents/usernames/$(key))
+        && get(/databases/$(database)/documents/usernames/$(key)).data.uid == uid
+        && get(/databases/$(database)/documents/usernames/$(key)).data.display == display;
+    }
+
     match /users/{userId} {
       allow read: if true;
       // username is bound to the registry: it may only be set/changed to a name whose
@@ -64,18 +77,6 @@ service cloud.firestore {
 
   function isSignedInAs(uid) {
     return isAuthenticated() && request.auth.uid == uid;
-  }
-
-  // True iff `display` (mixed-case) names a registry doc owned by uid whose canonical
-  // display matches exactly. The registry is keyed by the lowercase, so look it up there.
-  function ownsUsername(display, uid) {
-    let key = display.lower();
-    return display is string
-      && display.size() >= 3 && display.size() <= 30
-      && display.matches('^[a-zA-Z0-9_]+$')
-      && exists(/databases/$(database)/documents/usernames/$(key))
-      && get(/databases/$(database)/documents/usernames/$(key)).data.uid == uid
-      && get(/databases/$(database)/documents/usernames/$(key)).data.display == display;
   }
 
   function validPost(data) {

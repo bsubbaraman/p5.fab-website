@@ -12,6 +12,12 @@
 
 		const unsubscribe = auth.onAuthStateChanged(async (user) => {
 			if (!user) {
+				// Signed out — or rolled back during a failed signup. Clear identity so the
+				// header doesn't keep showing a phantom profile.
+				store.user = null;
+				store.data = {};
+				store.favorites = [];
+				store.loading = false;
 				return;
 			}
 
