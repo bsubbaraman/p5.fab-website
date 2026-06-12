@@ -1,8 +1,6 @@
 <script>
-	import { getFunctions, httpsCallable } from 'firebase/functions';
-	import { deleteUser } from 'firebase/auth';
-	import { deleteDoc, doc } from 'firebase/firestore';
-	import { store, authHandlers } from '../store/state.svelte.js';
+	import { getDoc, doc } from 'firebase/firestore';
+	import { authHandlers } from '../store/state.svelte.js';
 	import { toggleAuthContainer } from '$lib/events/auth.js';
 	import { db } from '../dbConfig';
 
@@ -14,24 +12,12 @@
 	async function signUp() {
 		if (authenticating) return;
 		authenticating = true;
-		let newUser = null;
 		try {
-			// Create auth user and user doc
-			newUser = await authHandlers.signup(email, password, username);
-
-			// Atomically claim the username via Cloud Function
-			const functions = getFunctions();
-			const claimUsername = httpsCallable(functions, 'claimUsername');
-			await claimUsername({ username });
-
+			// Claims the username + creates the auth user and user doc (rollback handled inside).
+			await authHandlers.signup(email, password, username);
 			toggleAuthContainer();
 		} catch (err) {
-			// If username claim failed, roll back the auth user and user doc
-			if (newUser) {
-				await deleteDoc(doc(db, 'users', newUser.uid));
-				await deleteUser(newUser);
-			}
-			if (err.code === 'functions/already-exists') {
+			if (err.message === 'username-taken') {
 				alert('Username is taken — please choose another.');
 			} else if (err.code === 'auth/email-already-in-use') {
 				alert('An account with that email already exists.');
@@ -59,10 +45,6 @@
 			formValidation.email = '';
 		}
 
-		// TODO: Check if username is taken
-		// if (username && ) {
-		// }
-
 		if (password && password.length < 6) {
 			formValidation.password = 'pasword must be at least 6 characters';
 		} else {
@@ -73,6 +55,29 @@
 		if (email && username && password && !Object.values(formValidation).some(Boolean)) {
 			disableSignUp = false;
 		}
+	});
+
+	// Username format + availability (debounced). Owns formValidation.username.
+	$effect(() => {
+		const u = username.trim();
+		if (!u) {
+			formValidation.username = '';
+			return;
+		}
+		if (!/^[a-zA-Z0-9_]{3,30}$/.test(u)) {
+			formValidation.username = '3–30 letters, numbers, or underscore';
+			return;
+		}
+		formValidation.username = '';
+		let cancelled = false;
+		const timer = setTimeout(async () => {
+			const snap = await getDoc(doc(db, 'usernames', u.toLowerCase()));
+			if (!cancelled) formValidation.username = snap.exists() ? 'username is taken' : '';
+		}, 400);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
 	});
 </script>
 

@@ -5,14 +5,32 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if true;
-      allow update, delete: if isSignedInAs(userId);
-      allow create: if isSignedInAs(userId);
+      // username is bound to the registry: it may only be set/changed to a name whose
+      // usernames/{lowercase} doc this user owns. This is what prevents impersonation.
+      allow create: if isSignedInAs(userId)
+        && ownsUsername(request.resource.data.username, userId);
+      allow update: if isSignedInAs(userId)
+        && (request.resource.data.get('username', '') == resource.data.get('username', '')
+          || ownsUsername(request.resource.data.username, userId));
+      allow delete: if isSignedInAs(userId);
     }
 
-    // Username registry is written only by Cloud Functions (Admin SDK)
-    match /users/usernames {
+    // Username registry: one doc per name, keyed by the LOWERCASE username (uniqueness),
+    // with the original-case `display` preserved. Claimed directly by the owner; atomic
+    // create + the create-only rule make collisions impossible, and display.lower() == key
+    // makes the displayed casing unspoofable.
+    match /usernames/{key} {
       allow read: if true;
-      allow write: if false;
+      allow create: if isAuthenticated()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'display', 'created'])
+        && key.size() >= 3 && key.size() <= 30
+        && key.matches('^[a-z0-9_]+$')
+        && request.resource.data.display is string
+        && request.resource.data.display.matches('^[a-zA-Z0-9_]+$')
+        && request.resource.data.display.lower() == key;
+      allow update: if false;                            // immutable: no repoint / takeover
+      allow delete: if isSignedInAs(resource.data.uid);  // owner may release / roll back
     }
 
     match /posts/{postID} {
@@ -46,6 +64,18 @@ service cloud.firestore {
 
   function isSignedInAs(uid) {
     return isAuthenticated() && request.auth.uid == uid;
+  }
+
+  // True iff `display` (mixed-case) names a registry doc owned by uid whose canonical
+  // display matches exactly. The registry is keyed by the lowercase, so look it up there.
+  function ownsUsername(display, uid) {
+    let key = display.lower();
+    return display is string
+      && display.size() >= 3 && display.size() <= 30
+      && display.matches('^[a-zA-Z0-9_]+$')
+      && exists(/databases/$(database)/documents/usernames/$(key))
+      && get(/databases/$(database)/documents/usernames/$(key)).data.uid == uid
+      && get(/databases/$(database)/documents/usernames/$(key)).data.display == display;
   }
 
   function validPost(data) {

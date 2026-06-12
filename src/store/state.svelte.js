@@ -1,6 +1,6 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, deleteUser } from "firebase/auth";
 import { auth } from "../dbConfig";
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../dbConfig';
 
 
@@ -53,15 +53,46 @@ export const editorState = $state({
 
 export const authHandlers = {
     signup: async (email, password, username) => {
+        const display = username.trim();
+        const key = display.toLowerCase();
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const uid = userCredential.user.uid;
-        await setDoc(doc(db, 'users', uid), {
-            username: username,
-            created: new Date(),
-            posts: {},
-            favorites: [],
-        });
-        return userCredential.user;
+        const user = userCredential.user;
+        const uid = user.uid;
+
+        // 1. Claim the username registry doc — lowercase key (uniqueness), original-case
+        //    display. The rule is create-only, so writing over an existing key is denied.
+        const usernameRef = doc(db, 'usernames', key);
+        try {
+            await setDoc(usernameRef, { uid, display, created: serverTimestamp() });
+        } catch (err) {
+            const snap = await getDoc(usernameRef);
+            if (snap.exists() && snap.data().uid === uid) {
+                // Orphaned claim we already own (earlier crash) — resume.
+            } else if (snap.exists()) {
+                await deleteUser(user); // name is taken by someone else
+                throw new Error('username-taken');
+            } else {
+                await deleteUser(user); // claim failed for another reason — surface it
+                throw err;
+            }
+        }
+
+        // 2. Create the user doc pointing at the claimed name.
+        try {
+            await setDoc(doc(db, 'users', uid), {
+                username: display,
+                created: new Date(),
+                posts: {},
+                favorites: [],
+            });
+        } catch (err) {
+            // Roll back the claim and the auth account so nothing is left dangling.
+            await deleteDoc(usernameRef);
+            await deleteUser(user);
+            throw err;
+        }
+
+        return user;
     },
     login: async (email, password) => {
         await signInWithEmailAndPassword(auth, email, password);
