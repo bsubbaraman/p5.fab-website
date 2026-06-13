@@ -3,7 +3,7 @@
 	import { editorState, store } from '../store/state.svelte.js';
 	import { db, storage } from '../dbConfig.js';
 	import { getUserData } from '$lib/dbLoadSave.js';
-	import { getDoc, doc, collection, addDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
+	import { getDoc, doc, collection, addDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 	import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 	import ImagePicker from './ImagePicker.svelte';
 	import MachineFields from './MachineFields.svelte';
@@ -117,25 +117,10 @@
 				posts: arrayUnion(objectID)
 			});
 
-			// If this is a fork, update the remix data
-			if (isFork) {
-				const parentRef = doc(db, 'posts', editorState.currentObjectID);
-				const parentSnap = await getDoc(parentRef);
-				const remixDataToUpdate = {
-					objectID: objectID,
-					authorUID: store.user.uid,
-					username: username,
-					created: timeCreated
-				};
-				if (parentSnap.exists()) {
-					await updateDoc(parentRef, {
-						forks: arrayUnion(remixDataToUpdate),
-						numForks: increment(1)
-					});
-				} else {
-					console.log("Couldn't find record id");
-				}
-			}
+			// A fork is identified solely by its own parentSketch link (set above). We no
+			// longer write the fork into the parent post's forks/numForks array — that was a
+			// cross-user write any signed-in user could abuse to bloat or spoof someone
+			// else's post. The post page derives forks via where('parentSketch','==',id).
 
 			// Save the info so we know if we need to update things
 			editorState.savedSketchData = dataToPost;

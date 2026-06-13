@@ -53,10 +53,11 @@ service cloud.firestore {
       allow create: if isAuthenticated()
         && request.auth.uid == request.resource.data.authorUID
         && validPost(request.resource.data);
-      // Owner can update their own post (but cannot change authorship)
-      // Others can only increment likes or add a fork
+      // The author can update their own post (but cannot change authorship).
+      // Anyone else may ONLY toggle their own like — no other cross-user writes.
+      // (Forks are no longer recorded on the parent post; they're derived from each
+      // fork's own parentSketch link, so there is no addingAFork() path anymore.)
       allow update: if (isAuthenticated() && togglingOwnLike())
-        || (isAuthenticated() && addingAFork())
         || (request.auth.uid == request.resource.data.authorUID
           && request.auth.uid == resource.data.authorUID
           && validPostUpdate(request.resource.data));
@@ -113,9 +114,4 @@ service cloud.firestore {
       );
   }
 
-  function addingAFork() {
-    return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['numForks', 'forks'])
-      && request.resource.data.numForks == resource.data.numForks + 1;
-  }
 }

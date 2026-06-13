@@ -2,7 +2,7 @@
 	import Header from '../../../components/Header.svelte';
 	import { store } from '../../../store/state.svelte.js';
 	import { db } from '../../../dbConfig';
-	import { getDoc, doc, updateDoc, deleteDoc, increment, arrayRemove, deleteField } from 'firebase/firestore';
+	import { getDoc, doc, updateDoc, deleteDoc, increment, arrayRemove, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
 	import { ref, listAll, deleteObject } from 'firebase/storage';
 	import { storage } from '../../../dbConfig';
 	import { toggleAuthContainer } from '$lib/events/auth';
@@ -17,6 +17,7 @@
 	let docRef = $state();
 	let parentData = $state();
 	let forkData = $state({});
+	let forkCount = $derived(Object.keys(forkData).length);
 	let galleryIndex = $state(0);
 	let displayShareScreen = $state(false);
 
@@ -29,18 +30,13 @@
 			parentData = await getPostFromDB(postData.parentSketch);
 		}
 
-		if (postData.numForks) {
-			const forkEntries = (
-				await Promise.all(
-					Object.values(postData.forks).map(async (fork) => {
-						const fd = await getPostFromDB(fork.objectID);
-						if (!fd) return null;
-						return [fork.objectID, { ...fd, authorUID: fork.authorUID, username: fork.username }];
-					})
-				)
-			).filter(Boolean);
-			forkData = Object.fromEntries(forkEntries);
-		}
+		// Derive forks from the children's parentSketch link (no denormalized forks array).
+		const forkSnap = await getDocs(
+			query(collection(db, 'posts'), where('parentSketch', '==', objectID))
+		);
+		const forks = forkSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+		forks.sort((a, b) => (a.created?.toMillis?.() ?? 0) - (b.created?.toMillis?.() ?? 0));
+		forkData = Object.fromEntries(forks.map((f) => [f.id, f]));
 	}
 
 	function formatDate(ts) {
@@ -157,7 +153,7 @@
 					</button>
 					<button>
 						<i class="fa-solid fa-code-fork"></i>
-						{postData.numForks}
+						{forkCount}
 					</button>
 					<a href="/sketch/{objectID}">
 						<button>
@@ -225,7 +221,7 @@
 				{/if}
 				<div class="forks">
 					<h3>Forks</h3>
-					{#if !postData.numForks}
+					{#if !forkCount}
 						No forks yet! Wanna make one?
 					{:else}
 						<div class="remix-grid">
