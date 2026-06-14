@@ -32,37 +32,37 @@
 		return snap.docs;
 	}
 
-	async function renderTree(nodeID, parts) {
-		const nodeData = await getPostFromDB(nodeID);
-		if (!nodeData) return;
+	// Render a node and its subtree to HTML. nodeData is reused from the parent's
+	// getChildren() result, so only the root costs an extra read; sibling subtrees are
+	// fetched in parallel. Returns the HTML plus the node count (for the empty-state).
+	async function renderNode(nodeID, nodeData) {
+		if (!nodeData) nodeData = await getPostFromDB(nodeID);
+		if (!nodeData) return { html: '', count: 0 };
 		const currentNode = nodeID == editorState.currentObjectID ? "class='current'" : '';
 		const safeName = escapeHTML(nodeData.name);
 		const safeUsername = escapeHTML(nodeData.username);
 		const safeAuthorUID = escapeHTML(nodeData.authorUID);
 		const safeNodeID = escapeHTML(nodeID);
-		parts.push('<li>');
-		parts.push(
-			`<span ${currentNode}><code><a data-sveltekit-reload href='/sketch/${safeNodeID}'>${safeName}</a><br/>by: <a data-sveltekit-reload href='/users/${safeAuthorUID}'>${safeUsername}</a></code></span>`
-		);
-		const children = await getChildren(nodeID);
-		if (children.length) {
-			parts.push('<ul>');
-			for (const child of children) {
-				await renderTree(child.id, parts);
-			}
-			parts.push('</ul>');
+		const span = `<span ${currentNode}><code><a data-sveltekit-reload href='/sketch/${safeNodeID}'>${safeName}</a><br/>by: <a data-sveltekit-reload href='/users/${safeAuthorUID}'>${safeUsername}</a></code></span>`;
+
+		const childDocs = await getChildren(nodeID);
+		let childrenHTML = '';
+		let count = 1;
+		if (childDocs.length) {
+			const subtrees = await Promise.all(childDocs.map((c) => renderNode(c.id, c.data())));
+			childrenHTML = `<ul>${subtrees.map((s) => s.html).join('')}</ul>`;
+			count += subtrees.reduce((n, s) => n + s.count, 0);
 		}
-		parts.push('</li>');
+		return { html: `<li>${span}${childrenHTML}</li>`, count };
 	}
 
 	async function makeRemixTree() {
 		const current = editorState.currentObjectID;
 		const isFork = !!editorState.savedSketchData?.isFork;
-		hasRemixes = isFork || (await getChildren(current)).length > 0;
-		const parts = [];
 		const nodeZero = await getOriginator(current);
-		await renderTree(nodeZero, parts);
-		treeHTML = parts.join('');
+		const { html, count } = await renderNode(nodeZero, null);
+		treeHTML = html;
+		hasRemixes = isFork || count > 1;
 	}
 
 	makeRemixTree();
