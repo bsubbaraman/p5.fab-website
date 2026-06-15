@@ -23,6 +23,8 @@
 	let { data } = $props(); // to pass in dynamic parameters, setup in +page.js
 	let initIframe = $state(false);
 	let sketchLoaded = $state(false);
+	let loadError = $state(false);
+	let notFound = $state(false);
 	let objectID = $state();
 
 	async function fetchSketchData() {
@@ -37,15 +39,17 @@
 			sketchLoaded = true;
 			return;
 		} else {
-			const sketchData = await getPostFromDB(objectID);
-			console.log('GOT SKETCH DATA');
-			if (!sketchData) {
-				alert("I can't find that id!");
-				// Route to a new sketch page
-				window.location.href = `/sketch/new`;
-			} else {
+			try {
+				const sketchData = await getPostFromDB(objectID);
+				if (!sketchData) {
+					notFound = true;
+					return;
+				}
 				loadSketchData(sketchData);
 				sketchLoaded = true;
+			} catch (e) {
+				console.error('Failed to load sketch', e);
+				loadError = true;
 			}
 		}
 	}
@@ -209,10 +213,21 @@
 				</div>
 			</div>
 		</div>
+	{:else if notFound}
+		<div class="load-state">That sketch doesn't exist. <a href="/sketch/new">Start a new sketch</a>.</div>
+	{:else if loadError}
+		<div class="load-state">Couldn't load this sketch — please refresh to try again.</div>
+	{:else}
+		<div class="load-state">loading editor…</div>
 	{/if}
 </main>
 
 <style>
+	.load-state {
+		padding: 2rem;
+		text-align: center;
+	}
+
 	#right-top {
 		position: relative;
 	}

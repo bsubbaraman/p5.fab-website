@@ -23,23 +23,31 @@
 	let diffIndex = $state(0);
 	let originalGalleryIndex = $state(0);
 	let modifiedGalleryIndex = $state(0);
+	let status = $state('loading'); // 'loading' | 'ready' | 'notfound' | 'nolog' | 'error'
 
 	async function fetchPostData() {
-		// Get info about the Fab
-		console.log('getting post data');
 		objectID = data.id;
-		postData = await getPostFromDB(objectID);
 		docRef = doc(db, 'posts', objectID);
-		projectLog = postData.projectLog;
-
-		// Gather images for the reel
-		thumbnails = [];
-		projectLog.forEach((entry) => {
-			thumbnails.push(entry.files[0]);
-		});
-
-		originalLog = projectLog[diffIndex];
-		modifiedLog = projectLog[diffIndex + 1];
+		try {
+			const post = await getPostFromDB(objectID);
+			if (!post) {
+				status = 'notfound';
+				return;
+			}
+			postData = post;
+			projectLog = post.projectLog;
+			if (!projectLog || projectLog.length < 2) {
+				status = 'nolog'; // a timeline needs at least two logged iterations to diff
+				return;
+			}
+			thumbnails = projectLog.map((entry) => entry.files[0]);
+			originalLog = projectLog[diffIndex];
+			modifiedLog = projectLog[diffIndex + 1];
+			status = 'ready';
+		} catch (e) {
+			console.error('Failed to load timeline', e);
+			status = 'error';
+		}
 	}
 
 	function updateDiff() {
@@ -70,7 +78,7 @@
 
 <main>
 	<Header />
-	{#if modifiedLog !== null}
+	{#if status === 'ready'}
 		<div class="page-container card">
 			<div class="diff-reel">
 				<DiffReel bind:overlayStart={diffIndex} images={thumbnails} />
@@ -101,8 +109,14 @@
 				/>
 			</div>
 		</div>
+	{:else if status === 'notfound'}
+		This sketch doesn't exist.
+	{:else if status === 'nolog'}
+		No timeline yet — this project needs at least two logged iterations.
+	{:else if status === 'error'}
+		Couldn't load this — please refresh to try again.
 	{:else}
-		loading
+		loading...
 	{/if}
 </main>
 

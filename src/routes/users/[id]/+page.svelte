@@ -19,6 +19,8 @@
 
 	let userData = $state();
 	let userMissing = $state(false);
+	let userError = $state(false);
+	let postsError = $state(false);
 
 	const PAGE_SIZE = 12;
 	let posts = $state([]); // array of { id, ...data }
@@ -38,14 +40,22 @@
 		];
 		if (lastDoc) constraints.push(startAfter(lastDoc));
 
-		const snap = await getDocs(query(collection(db, 'posts'), ...constraints));
-		const newPosts = [];
-		snap.forEach((d) => newPosts.push({ id: d.id, ...d.data() }));
+		try {
+			const snap = await getDocs(query(collection(db, 'posts'), ...constraints));
+			const newPosts = [];
+			snap.forEach((d) => newPosts.push({ id: d.id, ...d.data() }));
 
-		posts = [...posts, ...newPosts];
-		lastDoc = snap.docs[snap.docs.length - 1] ?? lastDoc;
-		hasMore = snap.docs.length === PAGE_SIZE;
-		loading = false;
+			posts = [...posts, ...newPosts];
+			lastDoc = snap.docs[snap.docs.length - 1] ?? lastDoc;
+			hasMore = snap.docs.length === PAGE_SIZE;
+			loading = false;
+		} catch (e) {
+			console.error('Failed to load posts', e);
+			postsError = true;
+			hasMore = false;
+			loading = false;
+			return;
+		}
 
 		// Keep loading if the sentinel is still in view (short pages / tall screens).
 		await tick();
@@ -66,7 +76,14 @@
 	let observer;
 	onMount(() => {
 		(async () => {
-			const docSnap = await getDoc(doc(db, 'users', userID));
+			let docSnap;
+			try {
+				docSnap = await getDoc(doc(db, 'users', userID));
+			} catch (e) {
+				console.error('Failed to load profile', e);
+				userError = true;
+				return;
+			}
 			if (!docSnap.exists()) {
 				userMissing = true;
 				return;
@@ -94,6 +111,8 @@
 	<div class="page-container card">
 		{#if userMissing}
 			No such user!
+		{:else if userError}
+			Couldn't load this profile — please refresh to try again.
 		{:else if userData}
 			<div class="fabHeader">
 				<h1 class="fabName">{userData.username}</h1>
@@ -128,13 +147,13 @@
 						</div>
 					{/each}
 				</div>
-			{:else if !hasMore}
+			{:else if !hasMore && !postsError}
 				No posts yet!
 			{/if}
 
 			<!-- sentinel — when visible, loads the next page -->
 			<div bind:this={sentinel} class="sentinel">
-				{#if loading}loading...{/if}
+				{#if loading}loading...{:else if postsError}Couldn't load posts — refresh to try again.{/if}
 			</div>
 		{:else}
 			loading...

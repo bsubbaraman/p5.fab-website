@@ -16,17 +16,33 @@
 	let parentPostData = $state(null);
 	let objectID = $state();
 	let docRef = $state();
+	let status = $state('loading'); // 'loading' | 'ready' | 'notfound' | 'noparent' | 'error'
 
 	async function fetchPostData() {
-		// Get info about the Fab
-		console.log('getting post data');
 		objectID = data.id;
-		postData = await getPostFromDB(objectID);
 		docRef = doc(db, 'posts', objectID);
-
-		// Get parent code
-		const parentID = postData.parentSketch;
-		parentPostData = await getPostFromDB(parentID);
+		try {
+			const post = await getPostFromDB(objectID);
+			if (!post) {
+				status = 'notfound';
+				return;
+			}
+			postData = post;
+			if (!post.parentSketch) {
+				status = 'noparent';
+				return;
+			}
+			const parent = await getPostFromDB(post.parentSketch);
+			if (!parent) {
+				status = 'noparent'; // original was deleted — nothing to diff against
+				return;
+			}
+			parentPostData = parent;
+			status = 'ready';
+		} catch (e) {
+			console.error('Failed to load diff', e);
+			status = 'error';
+		}
 	}
 
 	function getDate() {
@@ -43,7 +59,7 @@
 
 <main>
 	<Header />
-	{#if parentPostData !== null}
+	{#if status === 'ready'}
 		<div class="page-container card">
 			<div class="diff-info-row">
 				<div class="diff-info-col">
@@ -71,8 +87,14 @@
 				<CodeDiff original={parentPostData} modified={postData} mode="side-by-side" />
 			</div>
 		</div>
+	{:else if status === 'notfound'}
+		This sketch doesn't exist.
+	{:else if status === 'noparent'}
+		There's nothing to compare — this sketch isn't a remix, or the original is no longer available.
+	{:else if status === 'error'}
+		Couldn't load this — please refresh to try again.
 	{:else}
-		loading
+		loading...
 	{/if}
 </main>
 

@@ -20,23 +20,37 @@
 	let forkCount = $derived(Object.keys(forkData).length);
 	let galleryIndex = $state(0);
 	let displayShareScreen = $state(false);
+	let status = $state('loading'); // 'loading' | 'ready' | 'notfound' | 'error'
 
 	async function fetchPostData() {
 		objectID = data.id;
-		postData = await getPostFromDB(objectID);
 		docRef = doc(db, 'posts', objectID);
+		try {
+			const post = await getPostFromDB(objectID);
+			if (!post) {
+				status = 'notfound';
+				return;
+			}
+			postData = post;
+			status = 'ready'; // main content can render; related data loads best-effort below
 
-		if (postData.isFork && postData.parentSketch) {
-			parentData = await getPostFromDB(postData.parentSketch);
+			if (postData.isFork && postData.parentSketch) {
+				parentData = await getPostFromDB(postData.parentSketch);
+			}
+
+			// Derive forks from the children's parentSketch link (no denormalized forks array).
+			const forkSnap = await getDocs(
+				query(collection(db, 'posts'), where('parentSketch', '==', objectID))
+			);
+			const forks = forkSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+			forks.sort((a, b) => (a.created?.toMillis?.() ?? 0) - (b.created?.toMillis?.() ?? 0));
+			forkData = Object.fromEntries(forks.map((f) => [f.id, f]));
+		} catch (e) {
+			console.error('Failed to load post', e);
+			// Only error if the main post never loaded — a parent/forks failure shouldn't
+			// blank a page that already rendered.
+			if (status !== 'ready') status = 'error';
 		}
-
-		// Derive forks from the children's parentSketch link (no denormalized forks array).
-		const forkSnap = await getDocs(
-			query(collection(db, 'posts'), where('parentSketch', '==', objectID))
-		);
-		const forks = forkSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-		forks.sort((a, b) => (a.created?.toMillis?.() ?? 0) - (b.created?.toMillis?.() ?? 0));
-		forkData = Object.fromEntries(forks.map((f) => [f.id, f]));
 	}
 
 	function formatDate(ts) {
@@ -110,7 +124,7 @@
 	<div class="page-container card">
 		{#if displayShareScreen}
 			<Share bind:displayShareScreen {postData} {objectID} onSaved={handleShareSaved} />
-		{:else if postData}
+		{:else if status === 'ready'}
 			<div class="fabHeader">
 				<h1 class="fabName">{postData.name}</h1>
 				<span class="meta"
@@ -252,6 +266,10 @@
 			<!-- {#if postData.isFork || postData.forks}
 				<RemixPane />
 			{/if} -->
+		{:else if status === 'notfound'}
+			This sketch doesn't exist.
+		{:else if status === 'error'}
+			Couldn't load this sketch — please refresh to try again.
 		{:else}
 			loading...
 		{/if}
