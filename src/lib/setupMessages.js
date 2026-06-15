@@ -65,6 +65,8 @@ export function setupMessages() {
             editorState.machineStatus.maxX = body.maxX;
             editorState.machineStatus.maxY = body.maxY;
             editorState.machineStatus.maxZ = body.maxZ;
+            editorState.machineStatus.maxNozzleTemp = body.maxNozzleTemp;
+            editorState.machineStatus.maxBedTemp = body.maxBedTemp;
         }
     }
 

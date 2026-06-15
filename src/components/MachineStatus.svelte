@@ -1,5 +1,6 @@
 <script>
 	import { editorState } from '../store/state.svelte.js';
+	import { sandboxOrigin } from '$lib/sandbox.js';
 
 	let editingField = $state(null);
 	let editValue = $state('');
@@ -17,7 +18,8 @@
 
 	function sendGcode(gcode) {
 		const iframe = document.getElementById('preview');
-		if (iframe) iframe.contentWindow.postMessage({ type: 'fab_command', body: { gcode } }, '*');
+		if (iframe)
+			iframe.contentWindow.postMessage({ type: 'fab_command', body: { gcode } }, sandboxOrigin());
 	}
 
 	function startEdit(field) {
@@ -30,22 +32,32 @@
 		else if (field === 'z') editValue = editorState.machineStatus.z?.toFixed(2) ?? '0';
 	}
 
+	// Clamp manual commands against the same limits the library enforces. The ceilings come
+	// from fab_config (machineStatus), so there's no hardcoded copy to drift out of sync.
+	function clampManual(field, raw) {
+		const ms = editorState.machineStatus;
+		let max = null;
+		if (field === 'nozzle') max = ms.maxNozzleTemp;
+		else if (field === 'bed') max = ms.maxBedTemp;
+		else if (field === 'x') max = ms.maxX;
+		else if (field === 'y') max = ms.maxY;
+		else if (field === 'z') max = ms.maxZ;
+		let v = raw;
+		if (v < 0) v = 0;
+		else if (max != null && v > max) v = max;
+		if (v !== raw) alert(`Capped ${field} at ${v} for safety (you entered ${raw}).`);
+		return v;
+	}
+
 	function submitEdit() {
-		if (editingField === 'nozzle') {
-			const t = parseFloat(editValue);
-			if (!isNaN(t)) sendGcode(`M104 S${t}`);
-		} else if (editingField === 'bed') {
-			const t = parseFloat(editValue);
-			if (!isNaN(t)) sendGcode(`M140 S${t}`);
-		} else if (editingField === 'x') {
-			const v = parseFloat(editValue);
-			if (!isNaN(v)) sendGcode(`G0 X${v}`);
-		} else if (editingField === 'y') {
-			const v = parseFloat(editValue);
-			if (!isNaN(v)) sendGcode(`G0 Y${v}`);
-		} else if (editingField === 'z') {
-			const v = parseFloat(editValue);
-			if (!isNaN(v)) sendGcode(`G0 Z${v}`);
+		const raw = parseFloat(editValue);
+		if (!isNaN(raw)) {
+			const v = clampManual(editingField, raw);
+			if (editingField === 'nozzle') sendGcode(`M104 S${v}`);
+			else if (editingField === 'bed') sendGcode(`M140 S${v}`);
+			else if (editingField === 'x') sendGcode(`G0 X${v}`);
+			else if (editingField === 'y') sendGcode(`G0 Y${v}`);
+			else if (editingField === 'z') sendGcode(`G0 Z${v}`);
 		}
 		editingField = null;
 	}
@@ -72,11 +84,13 @@
 		<span class="dot" class:active={editorState.machineStatus.connected}></span>
 		{editorState.machineStatus.connected ? 'Connected' : 'Disconnected'}
 	</span>
-	<span class="divider">|</span>
-	<span class="status-item">
-		<span class="dot" class:active={editorState.machineStatus.isPrinting}></span>
-		{editorState.machineStatus.isPrinting ? 'Printing' : 'Idle'}
-	</span>
+	{#if editorState.machineStatus.connected}
+		<span class="divider">|</span>
+		<span class="status-item">
+			<span class="dot" class:active={editorState.machineStatus.isPrinting}></span>
+			{editorState.machineStatus.isPrinting ? 'Printing' : 'Idle'}
+		</span>
+	{/if}
 	{#if editorState.machineStatus.nozzleTemp !== null}
 		<span class="divider">|</span>
 		<span
@@ -170,7 +184,10 @@
 					{/if}
 					<div>Nozzle: {editorState.machineStatus.nozzleDiameter}mm</div>
 					<div>Filament: {editorState.machineStatus.filamentDiameter}mm</div>
-					<div>Build: {editorState.machineStatus.maxX} × {editorState.machineStatus.maxY} × {editorState.machineStatus.maxZ}mm</div>
+					<div>
+						Build: {editorState.machineStatus.maxX} × {editorState.machineStatus.maxY} × {editorState
+							.machineStatus.maxZ}mm
+					</div>
 				</div>
 			{/if}
 		</span>

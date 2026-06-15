@@ -43,6 +43,8 @@ export const editorState = $state({
         maxX: null,
         maxY: null,
         maxZ: null,
+        maxNozzleTemp: null,
+        maxBedTemp: null,
     },
     printAlert: null,
     lastRunCode: null,

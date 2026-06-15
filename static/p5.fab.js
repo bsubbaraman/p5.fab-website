@@ -135,6 +135,8 @@
 			_fab._transformOffset = { x: 0, y: 0, z: 0 };
 			_fab._stateStack = [];
 			_fab._deprecationWarned = new Set();
+			_fab._boundsWarned = new Set();
+			_fab._allowHighTemp = false; // safety ceiling re-armed each draw; opt out per draw
 			_fab._lastGcodePosition = { x: 0, y: 0, z: 0 };
 			setTimeout(() => {
 				window.parent.postMessage({ type: 'parsing_start' }, '*');
@@ -362,6 +364,8 @@
 	const defaultPrinterSettings = {
 		name: 'default',
 		baudRate: 115200,
+		maxNozzleTemp: 280, // °C — friendly safety ceiling; per-printer, overridable in setPrinter()
+		maxBedTemp: 130, // °C
 		nozzleDiameter: 0.8,
 		filamentDiameter: 1.75,
 		maxX: 220,
@@ -498,6 +502,10 @@
 			// Deprecation warnings — shown once per fabDraw call
 			this._deprecationWarned = new Set();
 
+			// Safety rails (the temp ceilings live on the printer config — see configure())
+			this._allowHighTemp = false;
+			this._boundsWarned = new Set(); // out-of-bounds move warnings, once per fabDraw
+
 			// Rendering (camera deferred to _initCamera — needs a WEBGL canvas)
 			this.vertices = [];
 			this.model = null;
@@ -569,6 +577,8 @@
 			this._travelAcceleration = config.travelAcceleration;
 			this._defaultTravelAcceleration = config.travelAcceleration;
 			this.maxZ = config.maxZ;
+			this._maxNozzleTemp = config.maxNozzleTemp ?? 280;
+			this._maxBedTemp = config.maxBedTemp ?? 130;
 			if (config.coordinateSystem == 'delta') {
 				this._maxX = (2 * config.radius) / sqrt(2);
 				this._maxY = this._maxX;
@@ -584,6 +594,8 @@
 				maxX: this.maxX,
 				maxY: this.maxY,
 				maxZ: this.maxZ,
+				maxNozzleTemp: this._maxNozzleTemp,
+				maxBedTemp: this._maxBedTemp,
 				nozzleDiameter: this._nozzleDiameter,
 				filamentDiameter: this._filamentDiameter
 			};
@@ -1096,7 +1108,23 @@
 		 * }
 		 */
 		extrusionMultiplier(value) {
-			this._extrusionMultiplier = value;
+			let v = parseFloat(value);
+			if (isNaN(v) || v < 0) {
+				window.parent.postMessage(
+					{ type: 'output', body: `p5.fab says: extrusionMultiplier(${value}) must be ≥ 0 — using 1.` },
+					'*'
+				);
+				v = 1;
+			} else if (v > 5) {
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: extrusionMultiplier(${v}) is high; watch for skipped steps. Proceeding.`
+					},
+					'*'
+				);
+			}
+			this._extrusionMultiplier = v;
 		}
 
 		/**
@@ -2145,6 +2173,8 @@
 		 * }
 		 */
 		setTemps(tNozzle, tBed) {
+			tNozzle = this._clampTemp(tNozzle, this._maxNozzleTemp, 'nozzle temp');
+			tBed = this._clampTemp(tBed, this._maxBedTemp, 'bed temp');
 			let cmd = `M104 S${tNozzle}`; // set nozzle temp without waiting
 			this.enqueue(cmd);
 
@@ -2190,6 +2220,7 @@
 		 * }
 		 */
 		setNozzleTemp(t) {
+			t = this._clampTemp(t, this._maxNozzleTemp, 'nozzle temp');
 			const cmd = `M109 S${t}`;
 			this.enqueue(cmd);
 			return cmd;
@@ -2217,9 +2248,53 @@
 		 * }
 		 */
 		setBedTemp(t) {
+			t = this._clampTemp(t, this._maxBedTemp, 'bed temp');
 			const cmd = `M190 S${t}`;
 			this.enqueue(cmd);
 			return cmd;
+		}
+
+		/**
+		 * Allow nozzle/bed temperatures above the default safety ceiling (280°C / 130°C),
+		 * e.g. for nylon or PC. Like other settings this resets at the start of every
+		 * fabDraw() (and on stopPrint()), so call it in fabDraw() before your high setTemps().
+		 * @group Print control
+		 */
+		allowHighTemp() {
+			this._allowHighTemp = true;
+		}
+
+		/**
+		 * Re-arm the temperature safety ceiling after allowHighTemp(). (It also resets
+		 * automatically at the start of each fabDraw().)
+		 * @group Print control
+		 */
+		disallowHighTemp() {
+			this._allowHighTemp = false;
+		}
+
+		// Friendly temperature guard: warn-and-cap rather than throw (p5.fab ethos).
+		_clampTemp(t, max, label) {
+			const v = parseFloat(t);
+			if (isNaN(v)) return t;
+			if (v < 0) {
+				window.parent.postMessage(
+					{ type: 'output', body: `p5.fab says: ${label} ${v}°C is below 0 — using 0°C.` },
+					'*'
+				);
+				return 0;
+			}
+			if (!this._allowHighTemp && v > max) {
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: ${label} ${v}°C looks high — capping at ${max}°C. Call fab.allowHighTemp() to override.`
+					},
+					'*'
+				);
+				return max;
+			}
+			return v;
 		}
 
 		setAbsolutePosition() {
@@ -2333,6 +2408,40 @@
 		 * @group Print control
 		 */
 		stopPrint() {
+			this._commandStream = [];
+			this._isPrinting = false;
+			fabDraw();
+		}
+
+		/**
+		 * Emergency stop: immediately send M112 to the printer, halting all motion and
+		 * heating at the firmware level. Unlike stopPrint() (which only clears the queued
+		 * commands), this halts a print already in progress — but afterward the firmware
+		 * needs a reset/reconnect before it will accept new commands.
+		 * @group Print control
+		 */
+		emergencyStop() {
+			// Halt the firmware first — this is the urgent part.
+			try {
+				if (this.connected && this.serial) {
+					this.serial.write('M112\n');
+					window.parent.postMessage(
+						{
+							type: 'output',
+							body: 'p5.fab says: EMERGENCY STOP (M112) sent — the printer halted and must be reset/reconnected before printing again.'
+						},
+						'*'
+					);
+				} else {
+					window.parent.postMessage(
+						{ type: 'output', body: 'p5.fab says: emergencyStop() — no printer is connected.' },
+						'*'
+					);
+				}
+			} catch (e) {
+				_error('p5.fab: emergencyStop() failed to write M112.', e);
+			}
+			// Then reset local state + rebuild the viz, same as stopPrint().
 			this._commandStream = [];
 			this._isPrinting = false;
 			fabDraw();
@@ -2507,18 +2616,34 @@
 			// Null axes mean "don't move this axis" — use the last known physical position
 			// so that E-only or Z-only moves (retract, z-hop, prime) don't drag XY when
 			// a translate() offset is active.
-			const gcodeX =
+			let gcodeX =
 				x !== null
 					? (parseFloat(this._plannedPosition.x) + this._transformOffset.x).toFixed(2)
 					: this._lastGcodePosition.x.toFixed(2);
-			const gcodeY =
+			let gcodeY =
 				y !== null
 					? (parseFloat(this._plannedPosition.y) + this._transformOffset.y).toFixed(2)
 					: this._lastGcodePosition.y.toFixed(2);
-			const gcodeZ =
+			let gcodeZ =
 				z !== null
 					? (parseFloat(this._plannedPosition.z) + this._transformOffset.z).toFixed(2)
 					: this._lastGcodePosition.z.toFixed(2);
+
+			// Soft limits: keep moves inside the build volume to avoid head crashes.
+			const bounded = this._clampToBed(gcodeX, gcodeY, gcodeZ);
+			if (bounded.clamped && !this._boundsWarned.has('xyz')) {
+				this._boundsWarned.add('xyz');
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: 'p5.fab says: a move went outside the build volume — clamping to the bed. Check your coordinates against maxX/maxY/maxZ.'
+					},
+					'*'
+				);
+			}
+			gcodeX = bounded.x;
+			gcodeY = bounded.y;
+			gcodeZ = bounded.z;
 
 			// Compute E from the physical distance traveled (gcode space), applying extrusionMultiplier.
 			// If the user passes an explicit e value, use it as-is (no multiplier applied).
@@ -2553,6 +2678,49 @@
 			const cmd = `${moveType} X${gcodeX} Y${gcodeY} Z${gcodeZ} E${this._plannedPosition.e} F${feedrateMmMin.toFixed(2)} ${this._plannedPosition.c} `;
 			this.enqueue(cmd);
 			return cmd;
+		}
+
+		// Clamp a target to the build volume so moves can't crash the head. O(1) per move —
+		// a few comparisons; in-bounds moves (the common case) return unchanged with no
+		// reformatting. Cartesian: [0,maxX]×[0,maxY]×[0,maxZ]; delta: circular bed of radius.
+		_clampToBed(gx, gy, gz) {
+			let x = parseFloat(gx);
+			let y = parseFloat(gy);
+			let z = parseFloat(gz);
+			let clamped = false;
+			if (z < 0) {
+				z = 0;
+				clamped = true;
+			} else if (z > this.maxZ) {
+				z = this.maxZ;
+				clamped = true;
+			}
+			if (this.coordinateSystem === 'delta') {
+				const r = Math.sqrt(x * x + y * y);
+				if (this.radius && r > this.radius) {
+					const k = this.radius / r;
+					x *= k;
+					y *= k;
+					clamped = true;
+				}
+			} else {
+				if (x < 0) {
+					x = 0;
+					clamped = true;
+				} else if (x > this.maxX) {
+					x = this.maxX;
+					clamped = true;
+				}
+				if (y < 0) {
+					y = 0;
+					clamped = true;
+				} else if (y > this.maxY) {
+					y = this.maxY;
+					clamped = true;
+				}
+			}
+			if (!clamped) return { x: gx, y: gy, z: gz, clamped: false };
+			return { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2), clamped: true };
 		}
 
 		/**
@@ -3494,8 +3662,8 @@
 		 * @param {number} [travelV=printV] - Travel speed in mm/sec (used for non-extrusion moves). Defaults to `printV` if omitted.
 		 */
 		speed(printV, travelV = printV) {
-			this._printSpeed = printV;
-			this._travelSpeed = travelV;
+			this._printSpeed = this._validSpeed(printV, 'print speed', this._printSpeed);
+			this._travelSpeed = this._validSpeed(travelV, 'travel speed', this._travelSpeed);
 		}
 
 		/**
@@ -3509,7 +3677,7 @@
 		 * @param {number} v - Print speed in mm/sec.
 		 */
 		printSpeed(v) {
-			this._printSpeed = v;
+			this._printSpeed = this._validSpeed(v, 'print speed', this._printSpeed);
 		}
 
 		/**
@@ -3523,7 +3691,24 @@
 		 * @param {number} v - Travel speed in mm/sec.
 		 */
 		travelSpeed(v) {
-			this._travelSpeed = v;
+			this._travelSpeed = this._validSpeed(v, 'travel speed', this._travelSpeed);
+		}
+
+		// Friendly speed guard: a non-positive feedrate would stall the printer. Upper bounds
+		// are already enforced by the per-axis maxSpeed settings during G-code generation.
+		_validSpeed(v, label, fallback) {
+			const n = parseFloat(v);
+			if (isNaN(n) || n <= 0) {
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: ${label} must be greater than 0 (got ${v}) — keeping ${fallback}.`
+					},
+					'*'
+				);
+				return fallback;
+			}
+			return n;
 		}
 
 		/**

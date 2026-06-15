@@ -8,6 +8,7 @@
 	import { connectToMachine } from '$lib/events/connectToMachine';
 	import { startPrint } from '$lib/events/startPrint';
 	import { stopPrint } from '$lib/events/stopPrint';
+	import { emergencyStop } from '$lib/events/emergencyStop';
 	import { toggleAuthContainer } from '$lib/events/auth.js';
 	import SignIn from './SignIn.svelte';
 	import SignUp from './SignUp.svelte';
@@ -175,7 +176,15 @@
 				<button onclick={startPrint}>print</button>
 			</div>
 			<div class="menu-item">
-				<button onclick={stopPrint}>stop</button>
+				<button onclick={stopPrint} disabled={!editorState.machineStatus.isPrinting}>stop</button>
+			</div>
+			<div class="menu-item">
+				<button
+					onclick={emergencyStop}
+					disabled={!editorState.machineStatus.isPrinting}
+					style={editorState.machineStatus.isPrinting ? 'color: #c00; font-weight: 600;' : ''}
+					>emergency stop</button
+				>
 			</div>
 		</div>
 
@@ -271,6 +280,19 @@
 
 	.menu-item:hover {
 		background-color: #ff6700;
+	}
+
+	/* A menu-item whose button is disabled shows no clickable/hover affordance. */
+	.menu-item:has(button:disabled) {
+		cursor: default;
+	}
+
+	.menu-item:has(button:disabled):hover {
+		background-color: transparent;
+	}
+
+	.menu-item button:disabled:hover {
+		background-color: var(--nord6);
 	}
 
 	.logo {
