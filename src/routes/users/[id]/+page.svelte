@@ -1,34 +1,58 @@
 <script>
+	import { onMount, tick } from 'svelte';
 	import Header from '../../../components/Header.svelte';
 	import { db } from '../../../dbConfig';
-	import { getDoc, doc, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+	import {
+		getDoc,
+		doc,
+		collection,
+		query,
+		where,
+		orderBy,
+		limit,
+		startAfter,
+		getDocs
+	} from 'firebase/firestore';
 
 	let { data } = $props();
+	const userID = data.id;
+
 	let userData = $state();
-	let postsData = $state();
+	let userMissing = $state(false);
 
-	async function fetchUserData() {
-		const userID = data.id;
+	const PAGE_SIZE = 24;
+	let posts = $state([]); // array of { id, ...data }
+	let lastDoc = $state(null); // Firestore cursor
+	let hasMore = $state(true);
+	let loading = $state(false);
+	let sentinel; // DOM element watched by IntersectionObserver
 
-		// Get user profile
-		const docSnap = await getDoc(doc(db, 'users', userID));
-		if (docSnap.exists()) {
-			userData = docSnap.data();
-		} else {
-			console.log('No such user!');
-			return;
-		}
+	async function fetchPage() {
+		if (loading || !hasMore) return;
+		loading = true;
 
-		// Get this user's posts, sorted by date
-		const q = query(
-			collection(db, 'posts'),
+		const constraints = [
 			where('authorUID', '==', userID),
-			orderBy('created', 'desc')
-		);
-		const snap = await getDocs(q);
-		const result = {};
-		snap.forEach((doc) => { result[doc.id] = doc.data(); });
-		postsData = result;
+			orderBy('created', 'desc'),
+			limit(PAGE_SIZE)
+		];
+		if (lastDoc) constraints.push(startAfter(lastDoc));
+
+		const snap = await getDocs(query(collection(db, 'posts'), ...constraints));
+		const newPosts = [];
+		snap.forEach((d) => newPosts.push({ id: d.id, ...d.data() }));
+
+		posts = [...posts, ...newPosts];
+		lastDoc = snap.docs[snap.docs.length - 1] ?? lastDoc;
+		hasMore = snap.docs.length === PAGE_SIZE;
+		loading = false;
+
+		// Keep loading if the sentinel is still in view (short pages / tall screens).
+		await tick();
+		if (hasMore && sentinel) {
+			const rect = sentinel.getBoundingClientRect();
+			if (rect.top < window.innerHeight + 200) fetchPage();
+		}
 	}
 
 	function getDate() {
@@ -39,50 +63,79 @@
 		return `${month} ${day} ${year} `;
 	}
 
-	fetchUserData();
+	let observer;
+	onMount(() => {
+		(async () => {
+			const docSnap = await getDoc(doc(db, 'users', userID));
+			if (!docSnap.exists()) {
+				userMissing = true;
+				return;
+			}
+			userData = docSnap.data();
+			await tick(); // the sentinel renders now that userData is set
+
+			observer = new IntersectionObserver(
+				(entries) => {
+					if (entries[0].isIntersecting) fetchPage();
+				},
+				{ rootMargin: '200px' }
+			);
+			if (sentinel) observer.observe(sentinel);
+
+			fetchPage();
+		})();
+
+		return () => observer?.disconnect();
+	});
 </script>
 
 <main>
 	<Header />
 	<div class="page-container card">
-		{#if userData && postsData}
+		{#if userMissing}
+			No such user!
+		{:else if userData}
 			<div class="fabHeader">
 				<h1 class="fabName">{userData.username}</h1>
 				<span class="meta">joined {getDate()}</span><br />
 			</div>
 
 			<h2>Posts</h2>
-			{#if postsData && Object.keys(postsData).length}
+			{#if posts.length}
 				<div class="grid">
-					{#each Object.entries(postsData) as [postID, postData]}
-						{#if true}
-							<div class="project-tile {postData.isFork ? 'shadowRemix' : 'shadow'}">
-								<a aria-label="Project page" href="/fabs/{postID}">
-									<div class="project-photo-container">
-										<img
-											alt="Contributed project"
-											class="project-photo"
-											src={postData.thumbnail ?? postData.files?.[0]}
-										/>
-										{#if postData.isFork}
-											<div class="overlayText">Fork</div>
-										{/if}
-									</div>
-								</a>
-								<a href="/fabs/{postID}">
-									<div class="project-title padding-bottom-half">{postData.name}</div>
-								</a>
-
-								<div class="author padding-bottom-std">
-									by <a href="/users/{postData.user}">{postData.username}</a>
+					{#each posts as post (post.id)}
+						<div class="project-tile {post.isFork ? 'shadowRemix' : 'shadow'}">
+							<a aria-label="Project page" href="/fabs/{post.id}">
+								<div class="project-photo-container">
+									<img
+										alt="Contributed project"
+										class="project-photo"
+										src={post.thumbnail ?? post.files?.[0]}
+										loading="lazy"
+									/>
+									{#if post.isFork}
+										<div class="overlayText">Fork</div>
+									{/if}
 								</div>
+							</a>
+							<a href="/fabs/{post.id}">
+								<div class="project-title padding-bottom-half">{post.name}</div>
+							</a>
+
+							<div class="author padding-bottom-std">
+								by <a href="/users/{post.authorUID}">{post.username}</a>
 							</div>
-						{/if}
+						</div>
 					{/each}
 				</div>
-			{:else}
+			{:else if !hasMore}
 				No posts yet!
 			{/if}
+
+			<!-- sentinel — when visible, loads the next page -->
+			<div bind:this={sentinel} class="sentinel">
+				{#if loading}loading...{/if}
+			</div>
 		{:else}
 			loading...
 		{/if}
@@ -133,5 +186,13 @@
 
 	.project-tile {
 		height: 300px;
+	}
+
+	.sentinel {
+		height: 1px;
+		text-align: center;
+		padding: 10px 0;
+		color: #888;
+		font-size: 0.85em;
 	}
 </style>
