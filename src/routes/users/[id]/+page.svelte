@@ -20,7 +20,7 @@
 	let userData = $state();
 	let userMissing = $state(false);
 
-	const PAGE_SIZE = 24;
+	const PAGE_SIZE = 12;
 	let posts = $state([]); // array of { id, ...data }
 	let lastDoc = $state(null); // Firestore cursor
 	let hasMore = $state(true);
