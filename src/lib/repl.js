@@ -4,6 +4,7 @@ import { editorState, store } from "../store/state.svelte.js";
 import { flashCode } from "$lib/flash.js";
 import { highlightErrorLine, clearErrorHighlight } from "$lib/errorHighlight.js";
 import { evalPrefix } from "$lib/evalPrefix.js";
+import { wrapSketch, reloadWrapper } from "$lib/sketchWrap.js";
 
 
 export function evalCode(code) {
@@ -41,15 +42,10 @@ export async function evalSketch(sketchCode) {
     // Yield to the browser so it can repaint the flash before the thread gets busy
     await new Promise(r => setTimeout(r, 0));
 
-    editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code:
-      evalPrefix +
-      codeToEval +
-      `\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-      `\n      try { window.draw = draw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-      `\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-      `\n      try { window.windowResized = windowResized } catch (e) { console.log("no resize") };` +
-      `\n    }\n  })()()`
-    }, sandboxOrigin());
+    editorState.sketchWindow.contentWindow.postMessage(
+      { type: 'eval', code: wrapSketch(codeToEval) },
+      sandboxOrigin()
+    );
 
     checkp5Init();
 
@@ -57,30 +53,10 @@ export async function evalSketch(sketchCode) {
       // Wrap setup() so createCanvas() is a no-op when dimensions haven't changed.
       // This prevents the canvas from going blank between runs, keeping the work
       // envelope visible. If dimensions change, the original createCanvas is allowed.
-      editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code:
-        `(() => {
-            const _orig = p5.prototype.createCanvas;
-            let _canvasResized = false;
-            p5.prototype.createCanvas = function(w, h, renderer) {
-                if (w === width && h === height) return this._renderer;
-                _canvasResized = true;
-                return _orig.call(this, w, h, renderer);
-            };
-            const savedPos = (typeof fab !== 'undefined' && fab) ? {x: fab.cameraPosition.x, y: fab.cameraPosition.y, z: fab.cameraPosition.z} : null;
-            const savedOrientation = (typeof fab !== 'undefined' && fab) ? {x: fab.cameraOrientation.x, y: fab.cameraOrientation.y, z: fab.cameraOrientation.z} : null;
-            try { setup(); } finally {
-                p5.prototype.createCanvas = _orig;
-                if (typeof fab !== 'undefined' && fab) {
-                    fab._needsCameraReInit = true;
-                    if (!_canvasResized && savedPos) {
-                        fab.cameraPosition.set(savedPos.x, savedPos.y, savedPos.z);
-                        fab.cameraOrientation.set(savedOrientation.x, savedOrientation.y, savedOrientation.z);
-                        fab.recoverCameraPosition = true;
-                    }
-                }
-            }
-        })()`
-      }, sandboxOrigin());
+      editorState.sketchWindow.contentWindow.postMessage(
+        { type: 'eval', code: reloadWrapper },
+        sandboxOrigin()
+      );
       editorState.sketchWindow.contentWindow.postMessage({ type: 'eval', code: `reloadSketch()` }, sandboxOrigin());
     }
   } catch (e) {

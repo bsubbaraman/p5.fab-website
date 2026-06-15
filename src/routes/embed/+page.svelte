@@ -6,7 +6,7 @@
 	import { Prec } from '@codemirror/state';
 	import { templateSketch } from '$lib/examples/examples';
 	import { flashCode } from '$lib/flash.js';
-	import { evalPrefix } from '$lib/evalPrefix.js';
+	import { wrapSketch, reloadWrapper } from '$lib/sketchWrap.js';
 
 	let code = $state('');
 	let editorView = null;
@@ -30,44 +30,14 @@
 		if (editorView) flashCode(editorView);
 
 
-		const wrapped =
-			evalPrefix +
-			code +
-			`\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-			`\n      try { window.draw = draw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-			`\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-			`\n      try { window.windowResized = windowResized } catch (e) { };` +
-			`\n    }\n  })()()`;
-
-		postToPreview(wrapped);
+		postToPreview(wrapSketch(code));
 
 		if (!p5Initialized) {
 			postToPreview(`try { remove() } catch (e) {}`);
 			postToPreview(`new p5()`);
 			p5Initialized = true;
 		} else {
-			postToPreview(`(() => {
-				const _orig = p5.prototype.createCanvas;
-				let _canvasResized = false;
-				p5.prototype.createCanvas = function(w, h, renderer) {
-					if (w === width && h === height) return this._renderer;
-					_canvasResized = true;
-					return _orig.call(this, w, h, renderer);
-				};
-				const savedPos = (typeof fab !== 'undefined' && fab) ? {x: fab.cameraPosition.x, y: fab.cameraPosition.y, z: fab.cameraPosition.z} : null;
-				const savedOrientation = (typeof fab !== 'undefined' && fab) ? {x: fab.cameraOrientation.x, y: fab.cameraOrientation.y, z: fab.cameraOrientation.z} : null;
-				try { setup(); } finally {
-					p5.prototype.createCanvas = _orig;
-					if (typeof fab !== 'undefined' && fab) {
-						fab._needsCameraReInit = true;
-						if (!_canvasResized && savedPos) {
-							fab.cameraPosition.set(savedPos.x, savedPos.y, savedPos.z);
-							fab.cameraOrientation.set(savedOrientation.x, savedOrientation.y, savedOrientation.z);
-							fab.recoverCameraPosition = true;
-						}
-					}
-				}
-			})()`);
+			postToPreview(reloadWrapper);
 			postToPreview(`reloadSketch()`);
 		}
 	}

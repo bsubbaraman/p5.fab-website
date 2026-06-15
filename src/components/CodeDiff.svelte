@@ -44,7 +44,6 @@
 	});
 
 	$effect(() => {
-		console.log('changing in here');
 		createView();
 	});
 </script>

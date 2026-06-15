@@ -326,7 +326,6 @@
 			renderGraph(graphData);
 			return;
 		}
-		console.log(selectedFabStatus);
 
 		// Filter nodes that contain one or more selected materials
 		const filteredNodes = graphData.nodes.filter(
@@ -335,7 +334,6 @@
 					node.materials?.some((m) => selectedMaterials.includes(m))) &&
 				(selectedFabStatus.length === 0 || selectedFabStatus.includes(node.hasFabricated))
 		);
-		console.log(filteredNodes);
 
 		// Build a Set of node IDs for fast lookup
 		const visibleNodeIDs = new Set(filteredNodes.map((n) => n.id));

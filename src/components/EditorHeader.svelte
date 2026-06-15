@@ -27,7 +27,6 @@
 		if (el.innerText.length >= maxTitleLength && event.key.length === 1) {
 			event.preventDefault();
 		} else if (event.key == 'Enter') {
-			console.log('enter');
 			event.preventDefault();
 		}
 
