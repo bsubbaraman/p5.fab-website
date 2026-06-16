@@ -2,6 +2,12 @@
 	"name": "p5.fab-website",
 	"private": true,
 	"version": "0.0.1",
+	"description": "A social platform for sharing and remixing p5.fab sketches that generate physical artifacts.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/bsubbaraman/p5.fab-website.git"
+	},
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
