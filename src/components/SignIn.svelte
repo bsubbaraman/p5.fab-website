@@ -21,6 +21,21 @@
 		}
 		// authenticating = true;
 	}
+
+	async function forgotPassword() {
+		if (!email) {
+			alert('Enter your email above first, then click "Forgot password?" to get a reset link.');
+			return;
+		}
+		try {
+			await authHandlers.resetPassword(email);
+		} catch (err) {
+			console.log('Password reset error', err);
+		}
+		// Neutral message regardless of outcome — Firebase does not reveal whether
+		// an account exists for the address (prevents email enumeration).
+		alert('If an account exists for that email, a password reset link is on its way.');
+	}
 </script>
 
 <div class="auth-container">
@@ -36,6 +51,7 @@
 		</label>
 		<button onclick={signIn} type="button" class="sign-in">Sign In</button>
 		<button onclick={signUp} type="button" class="sign-up">Sign Up</button>
+		<button onclick={forgotPassword} type="button" class="forgot">Forgot password?</button>
 	</form>
 </div>
 
@@ -45,5 +61,17 @@
 		color: black;
 		background: red;
 		margin-top: 20px;
+	}
+
+	.forgot {
+		display: block;
+		background: none;
+		border: none;
+		padding: 0;
+		margin-top: 12px;
+		font-size: 12px;
+		color: inherit;
+		text-decoration: underline;
+		cursor: pointer;
 	}
 </style>

@@ -1,4 +1,4 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, deleteUser } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, deleteUser, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "../dbConfig";
 import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../dbConfig';
@@ -110,6 +110,12 @@ export const authHandlers = {
     },
     logout: async () => {
         await signOut(auth);
+    },
+    // Email a password-reset link. Firebase does not reveal whether the address
+    // has an account (anti-enumeration), so the caller can always show a neutral
+    // "check your email" message regardless of outcome.
+    resetPassword: async (email) => {
+        await sendPasswordResetEmail(auth, email);
     }
 }
 
