@@ -1,6 +1,13 @@
 // p5.fab — a p5.js library for digital fabrication.
 // https://github.com/machineagency/p5.fab
 // MIT License
+//
+// Host integration (v0.1.x): p5.fab reports status, configuration, console
+// output, and G-code parsing progress by posting messages to the host page
+// (window.parent, targetOrigin '*'). It currently assumes it runs inside a host
+// that listens for these (the copypastes editor); used fully standalone, those
+// messages simply have no listener. Standalone event subscription — fab.on(...)
+// — is planned for v0.2.0.
 
 (function (global) {
 	/**
@@ -14,8 +21,16 @@
 
 	let _fab;
 	let _once = false;
-	let _savedShapesCounter = 0;
-	const moveCommands = ['G0', 'G1', 'G2', 'G3'];
+
+	// Create the Fab and its global `fab` proxy on first use
+	// Return the existing instance to preserve any open serial connection.
+	function _ensureFab() {
+		if (!_fab) {
+			_fab = new Fab();
+			global.fab = new Proxy(_fab, fabValidationHandler);
+		}
+		return global.fab;
+	}
 
 	/**
 	 * Explicitly initializes the global `fab` object and returns it.
@@ -83,10 +98,7 @@
 	 * }
 	 */
 	p5.prototype.createFab = function () {
-		if (!_fab) {
-			_fab = new Fab();
-		}
-		global.fab = new Proxy(_fab, fabValidationHandler);
+		_ensureFab();
 		_fab._initCamera();
 		return global.fab;
 	};
@@ -94,50 +106,15 @@
 	// Create fab before setup() so `fab` is always defined when user code runs.
 	// Camera init is deferred to _initCamera() since WEBGL doesn't exist yet here.
 	p5.prototype.registerMethod('beforeSetup', function () {
-		if (!_fab) {
-			_fab = new Fab();
-			global.fab = new Proxy(_fab, fabValidationHandler);
-		}
+		_ensureFab();
 	});
 
-	p5.prototype.getSerial = function () {
-		return _fab.serial;
-	};
-
-	p5.prototype.printOnOpen = function () {
-		_fab.serial.on('open', () => _fab.print());
-	};
-
 	p5.prototype.reloadSketch = function () {
-		if (!_fab) {
-			_fab = new Fab();
-			global.fab = new Proxy(_fab, fabValidationHandler);
-		}
+		_ensureFab();
 		_fab._initCamera();
 		if (typeof fabDraw === 'function') {
-			_fab.lastAsyncPosition = new XYZEFC();
-			_fab._plannedPosition = new XYZEFC();
-			_fab._extrusionMultiplier = _fab._defaultExtrusionMultiplier;
-			_fab._retractAmount = _fab._defaultRetractAmount;
-			_fab._zHopHeight = _fab._defaultZHopHeight;
-			_fab._printSpeed = _fab._defaultPrintSpeed;
-			_fab._travelSpeed = _fab._defaultTravelSpeed;
-			_fab._maxSpeedX = _fab._defaultMaxSpeedX;
-			_fab._maxSpeedY = _fab._defaultMaxSpeedY;
-			_fab._maxSpeedZ = _fab._defaultMaxSpeedZ;
-			_fab._maxSpeedE = _fab._defaultMaxSpeedE;
-			_fab._maxAccelerationX = _fab._defaultMaxAccelerationX;
-			_fab._maxAccelerationY = _fab._defaultMaxAccelerationY;
-			_fab._maxAccelerationZ = _fab._defaultMaxAccelerationZ;
-			_fab._maxAccelerationE = _fab._defaultMaxAccelerationE;
-			_fab._printAcceleration = _fab._defaultPrintAcceleration;
-			_fab._travelAcceleration = _fab._defaultTravelAcceleration;
-			_fab._transformOffset = { x: 0, y: 0, z: 0 };
-			_fab._stateStack = [];
-			_fab._deprecationWarned = new Set();
-			_fab._boundsWarned = new Set();
-			_fab._allowHighTemp = false; // safety ceiling re-armed each draw; opt out per draw
-			_fab._lastGcodePosition = { x: 0, y: 0, z: 0 };
+			_fab._resetParams();
+			_fab._resetDrawState();
 			setTimeout(() => {
 				window.parent.postMessage({ type: 'parsing_start' }, '*');
 				setTimeout(() => {
@@ -146,7 +123,7 @@
 					_fab._setMaxAccelerations();
 					fabDraw();
 					_fab.parseGcodeAsync();
-					_fab.syncVizStream = true;
+					_fab._syncVizStream = true;
 				}, 0);
 			}, 350);
 		}
@@ -364,7 +341,7 @@
 	const defaultPrinterSettings = {
 		name: 'default',
 		baudRate: 115200,
-		maxNozzleTemp: 280, // °C — friendly safety ceiling; per-printer, overridable in setPrinter()
+		maxNozzleTemp: 280,
 		maxBedTemp: 130, // °C
 		nozzleDiameter: 0.8,
 		filamentDiameter: 1.75,
@@ -390,39 +367,45 @@
 	};
 
 	const FAB_PARAM_NAMES = Object.freeze({
-		// Update these manually for the simple friendly error system
-		// Drawing — v optional
-		circle: ['x', 'y', 'z', 'd'],
-		// Absolute movement — v optional
+		// Maintained by hand for the simple friendly error system
+		// Grouped to match the documentation @group categories.
+		// Only strictly required arguments should be listed
+
+		// Motion
 		moveTo: ['x', 'y', 'z'],
 		travelTo: ['x', 'y', 'z'],
 		retractTo: ['x', 'y', 'z'],
 		moveToX: ['x'],
 		moveToY: ['y'],
 		moveToZ: ['z'],
-		// Relative movement — v optional
 		move: ['dx', 'dy', 'dz'],
 		travel: ['dx', 'dy', 'dz'],
 		moveX: ['dx'],
 		moveY: ['dy'],
 		moveZ: ['dz'],
-		// Absolute extrusion — e auto-calculated, v optional
+		translate: ['dx', 'dy', 'dz'],
+		// Extrusion
+		circle: ['x', 'y', 'z', 'd'],
 		extrudeTo: ['x', 'y', 'z'],
 		extrudeToX: ['x'],
 		extrudeToY: ['y'],
 		extrudeToXY: ['x', 'y'],
 		extrudeToZ: ['z'],
-		// Relative extrusion — e auto-calculated, v optional
 		extrude: ['dx', 'dy', 'dz'],
 		extrudeX: ['dx'],
 		extrudeXY: ['dx', 'dy'],
 		extrudeY: ['dy'],
 		extrudeZ: ['dz'],
-		// Config — these are the whole point of the call
+		// Print control
 		setTemps: ['tNozzle', 'tBed'],
 		speed: ['v'],
 		printSpeed: ['v'],
 		travelSpeed: ['v'],
+		printAcceleration: ['v'],
+		travelAcceleration: ['v'],
+		retractAmount: ['mm'],
+		zHopHeight: ['mm'],
+		// Configuration
 		maxSpeedX: ['v'],
 		maxSpeedY: ['v'],
 		maxSpeedZ: ['v'],
@@ -430,13 +413,7 @@
 		maxAccelerationX: ['v'],
 		maxAccelerationY: ['v'],
 		maxAccelerationZ: ['v'],
-		maxAccelerationE: ['v'],
-		printAcceleration: ['v'],
-		travelAcceleration: ['v'],
-		retractAmount: ['mm'],
-		zHopHeight: ['mm'],
-		// Utilities
-		translate: ['dx', 'dy', 'dz']
+		maxAccelerationE: ['v']
 	});
 
 	const fabValidationHandler = {
@@ -486,34 +463,25 @@
 			this._commands = [];
 			this._commandStream = [];
 
-			// Motion state
-			this.lastAsyncPosition = new XYZEFC();
-			this._plannedPosition = new XYZEFC();
-			this._lastGcodePosition = { x: 0, y: 0, z: 0 };
-			this.relativePositioning = false;
-			this.reportedPos = {};
-			this.gotInitPosition = false;
+			// Machine / connection / print state
+			// Persists across sketch re-runs
+			this._relativePositioning = false;
+			this._reportedPos = {};
+			this._gotInitPosition = false;
 			this._isPrinting = false;
 
-			// Push/pop state
-			this._transformOffset = { x: 0, y: 0, z: 0 };
-			this._stateStack = [];
+			// Drawing state (motion, push/pop, warnings, safety rails)
+			// also reset on every sketch reload
+			this._resetDrawState();
 
-			// Deprecation warnings — shown once per fabDraw call
-			this._deprecationWarned = new Set();
-
-			// Safety rails (the temp ceilings live on the printer config — see configure())
-			this._allowHighTemp = false;
-			this._boundsWarned = new Set(); // out-of-bounds move warnings, once per fabDraw
-
-			// Rendering (camera deferred to _initCamera — needs a WEBGL canvas)
-			this.vertices = [];
-			this.model = null;
-			this.lineWeight = 1.5;
+			// Rendering (camera deferred to _initCamera for the WEBGL canvas)
+			this._vertices = [];
+			this._model = null;
+			this._lineWeight = 1.5;
 			this._parseGeneration = 0;
 			this._parsingGcode = false;
-			this.syncVizStream = true;
-			this.tempQueryIntervalID = null;
+			this._syncVizStream = true;
+			this._tempQueryIntervalID = null;
 			this.camera = null;
 			this.cameraPosition = null;
 			this.cameraOrientation = null;
@@ -546,36 +514,24 @@
 			this.filamentDiameter = config.filamentDiameter;
 			this.baudRate = config.baudRate;
 			this.autoConnect = config.autoConnect;
-			this._extrusionMultiplier = config.extrusionMultiplier;
+			// Tunable parameters: record the configured value as the default, then apply
+			// it via _resetParams() (the same reset used on every sketch reload).
 			this._defaultExtrusionMultiplier = config.extrusionMultiplier;
-			this._retractAmount = config.retractAmount;
 			this._defaultRetractAmount = config.retractAmount;
-			this._zHopHeight = config.zHopHeight;
 			this._defaultZHopHeight = config.zHopHeight;
-			this._printSpeed = config.printSpeed;
 			this._defaultPrintSpeed = config.printSpeed;
-			this._travelSpeed = config.travelSpeed;
 			this._defaultTravelSpeed = config.travelSpeed;
-			this._maxSpeedX = config.maxSpeedX;
 			this._defaultMaxSpeedX = config.maxSpeedX;
-			this._maxSpeedY = config.maxSpeedY;
 			this._defaultMaxSpeedY = config.maxSpeedY;
-			this._maxSpeedZ = config.maxSpeedZ;
 			this._defaultMaxSpeedZ = config.maxSpeedZ;
-			this._maxSpeedE = config.maxSpeedE;
 			this._defaultMaxSpeedE = config.maxSpeedE;
-			this._maxAccelerationX = config.maxAccelerationX;
 			this._defaultMaxAccelerationX = config.maxAccelerationX;
-			this._maxAccelerationY = config.maxAccelerationY;
 			this._defaultMaxAccelerationY = config.maxAccelerationY;
-			this._maxAccelerationZ = config.maxAccelerationZ;
 			this._defaultMaxAccelerationZ = config.maxAccelerationZ;
-			this._maxAccelerationE = config.maxAccelerationE;
 			this._defaultMaxAccelerationE = config.maxAccelerationE;
-			this._printAcceleration = config.printAcceleration;
 			this._defaultPrintAcceleration = config.printAcceleration;
-			this._travelAcceleration = config.travelAcceleration;
 			this._defaultTravelAcceleration = config.travelAcceleration;
+			this._resetParams();
 			this.maxZ = config.maxZ;
 			this._maxNozzleTemp = config.maxNozzleTemp ?? 280;
 			this._maxBedTemp = config.maxBedTemp ?? 130;
@@ -589,7 +545,7 @@
 				this.maxY = config.maxY;
 			}
 
-			var messageData = {
+			const messageData = {
 				coordinateSystem: this.coordinateSystem,
 				maxX: this.maxX,
 				maxY: this.maxY,
@@ -604,6 +560,38 @@
 			if (this.cameraPosition) {
 				this.setCameraView('home');
 			}
+		}
+
+		// Restore all tunable parameters to their configured defaults.
+		// Called from up-front and whevever the sketch is reloade
+		_resetParams() {
+			this._extrusionMultiplier = this._defaultExtrusionMultiplier;
+			this._retractAmount = this._defaultRetractAmount;
+			this._zHopHeight = this._defaultZHopHeight;
+			this._printSpeed = this._defaultPrintSpeed;
+			this._travelSpeed = this._defaultTravelSpeed;
+			this._maxSpeedX = this._defaultMaxSpeedX;
+			this._maxSpeedY = this._defaultMaxSpeedY;
+			this._maxSpeedZ = this._defaultMaxSpeedZ;
+			this._maxSpeedE = this._defaultMaxSpeedE;
+			this._maxAccelerationX = this._defaultMaxAccelerationX;
+			this._maxAccelerationY = this._defaultMaxAccelerationY;
+			this._maxAccelerationZ = this._defaultMaxAccelerationZ;
+			this._maxAccelerationE = this._defaultMaxAccelerationE;
+			this._printAcceleration = this._defaultPrintAcceleration;
+			this._travelAcceleration = this._defaultTravelAcceleration;
+		}
+
+		// Reset drawing state
+		_resetDrawState() {
+			this._lastAsyncPosition = new XYZEFC();
+			this._plannedPosition = new XYZEFC();
+			this._lastGcodePosition = { x: 0, y: 0, z: 0 };
+			this._transformOffset = { x: 0, y: 0, z: 0 };
+			this._stateStack = [];
+			this._deprecationWarned = new Set();
+			this._boundsWarned = new Set();
+			this._allowHighTemp = false; // safety ceiling re-armed each run; opt out per draw
 		}
 
 		/**
@@ -707,7 +695,7 @@
 		/**
 		 * The maximum X dimension of the printer in mm.
 		 * The default value is set by the printer profile.
-		 * You can configure the max dimentaion via `setPrinter()`
+		 * You can configure the max dimension via `setPrinter()`
 		 * or directly to override the preset.
 		 * @type {number}
 		 * @group Configuration
@@ -740,7 +728,7 @@
 		/**
 		 * The maximum Y dimension of the printer in mm.
 		 * The default value is set by the printer profile.
-		 * You can configure the max dimentaion via `setPrinter()`
+		 * You can configure the max dimension via `setPrinter()`
 		 * or directly to override the preset.
 		 * @type {number}
 		 * @group Configuration
@@ -773,7 +761,7 @@
 		/**
 		 * The maximum Z dimension of the printer in mm.
 		 * The default value is set by the printer profile.
-		 * You can configure the max dimentaion via `setPrinter()`
+		 * You can configure the max dimension via `setPrinter()`
 		 * or directly to override the preset.
 		 * @type {number}
 		 * @group Configuration
@@ -1111,7 +1099,10 @@
 			let v = parseFloat(value);
 			if (isNaN(v) || v < 0) {
 				window.parent.postMessage(
-					{ type: 'output', body: `p5.fab says: extrusionMultiplier(${value}) must be ≥ 0 — using 1.` },
+					{
+						type: 'output',
+						body: `p5.fab says: extrusionMultiplier(${value}) must be ≥ 0 — using 1.`
+					},
 					'*'
 				);
 				v = 1;
@@ -1584,7 +1575,7 @@
 					'*'
 				);
 				_fab.serial.write('M114\n');
-				_fab.tempQueryIntervalID = setInterval(() => {
+				_fab._tempQueryIntervalID = setInterval(() => {
 					if (!_fab.isPrinting) {
 						_fab.serial.write('M105\n');
 						_fab.serial.write('M114\n');
@@ -1601,8 +1592,8 @@
 					},
 					'*'
 				);
-				clearInterval(_fab.tempQueryIntervalID);
-				_fab.tempQueryIntervalID = null;
+				clearInterval(_fab._tempQueryIntervalID);
+				_fab._tempQueryIntervalID = null;
 			});
 
 			if (this.autoConnect) {
@@ -1637,9 +1628,9 @@
 				);
 				return;
 			}
-			if (this.syncVizStream) {
+			if (this._syncVizStream) {
 				this._commandStream = this._commands.slice();
-				this.syncVizStream = false;
+				this._syncVizStream = false;
 			}
 
 			if (this._commandStream.length > 0) {
@@ -1651,7 +1642,7 @@
 				this._commandStream.shift();
 			} else {
 				this._isPrinting = false;
-				this.syncVizStream = true;
+				this._syncVizStream = true;
 				window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			}
 		}
@@ -1739,24 +1730,24 @@
 		updateReportedPosition(resp) {
 			resp.split(' ').forEach((item) => {
 				if (item.includes('X:')) {
-					this.reportedPos['X'] = item.split(':')[1];
+					this._reportedPos['X'] = item.split(':')[1];
 				}
 				if (item.includes('Y:')) {
-					this.reportedPos['Y'] = item.split(':')[1];
+					this._reportedPos['Y'] = item.split(':')[1];
 				}
 				if (item.includes('Z:')) {
-					this.reportedPos['Z'] = item.split(':')[1];
+					this._reportedPos['Z'] = item.split(':')[1];
 				}
 			});
 
-			if (!this.gotInitPosition) {
-				this._plannedPosition.x = this.reportedPos['X'];
-				this._plannedPosition.y = this.reportedPos['Y'];
-				this._plannedPosition.z = this.reportedPos['Z'];
-				this.lastAsyncPosition.x = this.reportedPos['X'];
-				this.lastAsyncPosition.y = this.reportedPos['Y'];
-				this.lastAsyncPosition.z = this.reportedPos['Z'];
-				this.gotInitPosition = true;
+			if (!this._gotInitPosition) {
+				this._plannedPosition.x = this._reportedPos['X'];
+				this._plannedPosition.y = this._reportedPos['Y'];
+				this._plannedPosition.z = this._reportedPos['Z'];
+				this._lastAsyncPosition.x = this._reportedPos['X'];
+				this._lastAsyncPosition.y = this._reportedPos['Y'];
+				this._lastAsyncPosition.z = this._reportedPos['Z'];
+				this._gotInitPosition = true;
 			}
 
 			window.parent.postMessage(
@@ -1764,85 +1755,13 @@
 					type: 'fab_status',
 					body: {
 						event: 'position',
-						x: parseFloat(this.reportedPos['X']),
-						y: parseFloat(this.reportedPos['Y']),
-						z: parseFloat(this.reportedPos['Z'])
+						x: parseFloat(this._reportedPos['X']),
+						y: parseFloat(this._reportedPos['Y']),
+						z: parseFloat(this._reportedPos['Z'])
 					}
 				},
 				'*'
 			);
-		}
-
-		parseGcode() {
-			this.vertices = [];
-			this._commands.forEach((cmd) => {
-				let fullcommand = cmd;
-				cmd = cmd.trim().split(' ');
-				var code = cmd[0].substring(0, 2);
-				if (code !== 'G0' && code !== 'G1') {
-					// G0&1 are move commands. add G2&3 later.
-					return;
-				}
-				var newV = new p5.Vector();
-				let vertexData = {
-					command: code,
-					vertex: newV,
-					full: fullcommand
-				};
-
-				/****
-             *  parse gcode
-             *  Ender coordinate system
-                    7 +Z
-                   /
-                  /
-                  +-----------> +X
-                  |
-                  |
-                  |
-                  V +Y
-
-                p5 WEBGL coordinate system
-                    7 +Y
-                   /
-                  /
-                  +-----------> +X
-                  |
-                  |
-                  |
-                  V -Z
-
-             */
-				cmd.forEach((c) => {
-					const val = c.substring(1);
-					switch (c.charAt(0)) {
-						case 'X':
-							newV.x = val;
-							break;
-						case 'Y':
-							newV.z = val; // switch z-y
-							break;
-						case 'Z':
-							newV.y = -1 * val; // switch z-y
-							break;
-						case 'E':
-							if (val < 0) {
-								newV = null;
-								return;
-							}
-						case ';':
-							if (val == 'prime' || val == 'present') {
-								// || val == 'intro' to remove intro line
-								newV = null;
-								return;
-							}
-					}
-				});
-
-				if (newV) {
-					this.vertices.push(vertexData);
-				}
-			});
 		}
 
 		async parseGcodeAsync() {
@@ -1905,8 +1824,8 @@
 
 			if (this._parseGeneration !== generation) return;
 
-			this.vertices = vertices;
-			this.model = null;
+			this._vertices = vertices;
+			this._model = null;
 			this._parsingGcode = false;
 			window.parent.postMessage({ type: 'parsing_complete' }, '*');
 		}
@@ -1915,7 +1834,7 @@
 		 * Render a 3D preview of the planned toolpaths.
 		 *
 		 * Call this inside the `draw()` loop, using WEBGL mode. Note that rendering isn't necessary; removing
-		 * or commenting out the `render()` call with still generate GCode.
+		 * or commenting out the `render()` call will still generate GCode.
 		 * @group Utilities
 		 * @example
 		 * function setup() {
@@ -1953,22 +1872,20 @@
 			}
 
 			if (this._parsingGcode) {
-				if (this.model) {
+				if (this._model) {
 					stroke(0);
-					strokeWeight(this.lineWeight);
-					model(this.model);
+					strokeWeight(this._lineWeight);
+					model(this._model);
 				}
-			} else if (!this.model) {
-				const _verts = this.vertices;
-				const _lw = this.lineWeight;
-				this.model = buildGeometry(() => {
+			} else if (!this._model) {
+				const _verts = this._vertices;
+				const _lw = this._lineWeight;
+				this._model = buildGeometry(() => {
 					stroke(0);
 					strokeWeight(_lw);
 					noFill();
 					let pos = createVector(0, 0, 0);
-					for (let v in _verts) {
-						v = parseInt(v);
-						const vd = _verts[v];
+					for (const vd of _verts) {
 						if (vd.command === 'G1') {
 							line(pos.x, pos.y, pos.z, vd.vertex.x, vd.vertex.y, vd.vertex.z);
 						}
@@ -1979,8 +1896,8 @@
 				});
 			} else {
 				stroke(0);
-				strokeWeight(this.lineWeight);
-				model(this.model);
+				strokeWeight(this._lineWeight);
+				model(this._model);
 			}
 			pop();
 
@@ -2063,8 +1980,6 @@
 			scale(-1, 1);
 			push();
 			translate(this.maxX / 2, 0, this.maxY / 2);
-			// rotateY(PI / 12);
-			// rotateX(PI / 12);
 			fill(254, 249, 152);
 			push();
 			translate(0, 2.5, 0);
@@ -2106,7 +2021,6 @@
 			box((2 * this.radius) / sqrt(2), this.maxZ, (2 * this.radius) / sqrt(2)); // work envelope
 			pop();
 
-			// not sure if needed
 			noFill();
 			stroke(0);
 		}
@@ -2298,7 +2212,7 @@
 		}
 
 		setAbsolutePosition() {
-			this.relativePositioning = false;
+			this._relativePositioning = false;
 			const cmd = 'G90';
 			this.enqueue(cmd);
 		}
@@ -2307,13 +2221,13 @@
 			// For Marlin, G90 sets extruder to absolute https://marlinfw.org/docs/gcode/G090.html
 			// Duet doesn't https://docs.duet3d.com/en/User_manual/Reference/Gcodes
 			// Send an M83 to keep extruder in relative mode.
-			this.relativePositioning = false;
+			this._relativePositioning = false;
 			this.setAbsolutePosition();
 			this.setERelative();
 		}
 
 		setRelativePosition() {
-			this.relativePositioning = true;
+			this._relativePositioning = true;
 			const cmd = 'G91';
 			this.enqueue(cmd);
 		}
@@ -2525,7 +2439,7 @@
 		}
 
 		waitCommand() {
-			var cmd = 'M400';
+			const cmd = 'M400';
 			this.enqueue(cmd);
 		}
 
@@ -2544,7 +2458,7 @@
 			// currently not working
 			this.add('AUTO_REPORT_POSITION');
 			t = parseInt(t);
-			var cmd = `M154 S${t}`;
+			const cmd = `M154 S${t}`;
 			this.enqueue(cmd);
 		}
 
@@ -2552,8 +2466,8 @@
 		// Path Commands
 		//===================================
 		updateAsyncPosition({ x = null, y = null, z = null, e = null, v = null, comment = '' } = {}) {
-			this.lastAsyncPosition = { ...this._plannedPosition };
-			if (!this.relativePositioning) {
+			this._lastAsyncPosition = { ...this._plannedPosition };
+			if (!this._relativePositioning) {
 				if (x !== null) {
 					this._plannedPosition.x = parseFloat(x).toFixed(2);
 				}
@@ -2888,7 +2802,10 @@
 			if (!this._deprecationWarned.has('moveExtrude')) {
 				this._deprecationWarned.add('moveExtrude');
 				window.parent.postMessage(
-					{ type: 'output', body: 'p5.fab: moveExtrude() is deprecated — use extrudeTo() instead.' },
+					{
+						type: 'output',
+						body: 'p5.fab: moveExtrude() is deprecated — use extrudeTo() instead.'
+					},
 					'*'
 				);
 			}
@@ -3135,17 +3052,6 @@
 			this.setAbsolutePositionXYZ();
 			this._moveXYZE({ z: z, v: v });
 		}
-
-		// /**
-		//  * Move the extruder to an absolute E position.
-		//  * @group Motion
-		//  * @param {number} e - Target E position in mm.
-		//  * @param {number} v - Feedrate in mm/min.
-		//  */
-		// moveToE(e, v) {
-		// 	this.setAbsolutePositionXYZ();
-		// 	this._moveXYZE({ e: e, v: v });
-		// }
 
 		/**
 		 * Move a relative distance in X without extruding.
@@ -3870,7 +3776,7 @@
 		 * @param {number} z - Max Z acceleration in mm/s².
 		 */
 		setMaxAcceleration(x, y, z) {
-			var cmd = `M201 X${x} Y${y} Z${z};`;
+			const cmd = `M201 X${x} Y${y} Z${z};`;
 			this.enqueue(cmd);
 		}
 
@@ -3907,7 +3813,7 @@
 		 * @param {number} tool_idx - Zero-based tool index.
 		 */
 		pickupTool(tool_idx) {
-			var cmd = `T${tool_idx}`;
+			const cmd = `T${tool_idx}`;
 			this.enqueue(cmd);
 		}
 
