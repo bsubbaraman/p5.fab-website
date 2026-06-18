@@ -27,23 +27,31 @@ export function normalizeCode(code) {
 export async function evalSketch(sketchCode) {
   try {
     editorState.output = [];
+    editorState.runId++;
+    editorState.runHadSyntaxError = false;
     clearErrorHighlight(editorState.editorView);
 
     // evalPrefix is shared with embed/+page.svelte via $lib/evalPrefix.js
     const prefixLines = (evalPrefix.match(/\n/g) || []).length;
 
     const isFirstRun = !editorState.p5Initialized;
-    const codeToEval = injectTryCatch(sketchCode, prefixLines);
+    const codeToEval = injectTryCatch(sketchCode, prefixLines, editorState.runId);
 
     // Flash and record BEFORE blocking work so the user sees feedback immediately
     flashCode(editorState.editorView);
+
+    // A parse error means the new code can't run: injectTryCatch has already shown the
+    // syntax error and set runHadSyntaxError. Leave the previously-running sketch as-is
+    // (its async messages are now suppressed) rather than re-evaluating broken/empty code.
+    if (editorState.runHadSyntaxError) return;
+
     editorState.lastRunCode = normalizeCode(sketchCode);
 
     // Yield to the browser so it can repaint the flash before the thread gets busy
     await new Promise(r => setTimeout(r, 0));
 
     editorState.sketchWindow.contentWindow.postMessage(
-      { type: 'eval', code: wrapSketch(codeToEval) },
+      { type: 'eval', code: wrapSketch(codeToEval, editorState.runId) },
       sandboxOrigin()
     );
 
@@ -64,12 +72,13 @@ export async function evalSketch(sketchCode) {
   }
 }
 
-function injectTryCatch(sketchCode, prefixLines) {
+function injectTryCatch(sketchCode, prefixLines, runId) {
   try {
     var ast = Parser.parse(sketchCode, { ecmaVersion: 2020 });
   }
   catch (e) {
     const lineNum = e.loc?.line ?? null;
+    editorState.runHadSyntaxError = true;
     setOutput(false, [{ type: "error", body: e.message ?? e.toString() }]);
     if (lineNum && editorState.editorView) {
       highlightErrorLine(editorState.editorView, lineNum);
@@ -100,9 +109,9 @@ function injectTryCatch(sketchCode, prefixLines) {
         functionDeclaration +
         '\ntry {\n' + bodyContent +
         `\n}\ncatch (e){\n` +
-        `const __m = e.stack && e.stack.match(/<anonymous>:(\\d+):\\d+/);\n` +
+        `const __m = e.stack && e.stack.match(/(?:<anonymous>| eval):(\\d+):\\d+/);\n` +
         `const __ln = __m ? parseInt(__m[1]) - ${lineOffset} : null;\n` +
-        `window.parent.postMessage({ type: "error", body: e.toString(), line: __ln }, '*');\n` +
+        `window.parent.postMessage({ type: "error", body: e.toString(), line: __ln, runId: ${runId} }, '*');\n` +
         `}\n}\n`;
     }
     else {

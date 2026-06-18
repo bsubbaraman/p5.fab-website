@@ -6,13 +6,13 @@ import { evalPrefix } from '$lib/evalPrefix.js';
 // "exports" the preview expects (setup/draw/fabDraw/windowResized) and close the IIFE that
 // evalPrefix opens. Callers post the returned string to the preview themselves, keeping their
 // own postMessage target (sandbox origin for the editor, '*' for the embed).
-export function wrapSketch(body) {
+export function wrapSketch(body, runId = null) {
 	return (
 		evalPrefix +
 		body +
-		`\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-		`\n      try { window.draw = draw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
-		`\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString() }, '*'); };` +
+		`\n      try { window.setup = setup } catch (e) { window.parent.postMessage({ type: "error", body: e.toString(), runId: ${runId} }, '*'); };` +
+		`\n      try { window.draw = draw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString(), runId: ${runId} }, '*'); };` +
+		`\n      try { window.fabDraw = fabDraw } catch (e) { window.parent.postMessage({ type: "error", body: e.toString(), runId: ${runId} }, '*'); };` +
 		`\n      try { window.windowResized = windowResized } catch (e) { };` +
 		`\n    }\n  })()()`
 	);

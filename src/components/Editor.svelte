@@ -5,7 +5,7 @@
 	import { evalSketch } from '$lib/repl.js';
 	import { clearErrorHighlight } from '$lib/errorHighlight.js';
 	import { setupMessages } from '$lib/setupMessages.js';
-	import { keymap } from '@codemirror/view';
+	import { keymap, EditorView } from '@codemirror/view';
 	import { javascript } from '@codemirror/lang-javascript';
 	import { acceptCompletion, completionStatus } from '@codemirror/autocomplete';
 	import { indentWithTab, indentMore, indentLess } from '@codemirror/commands';
@@ -46,7 +46,14 @@
 		])
 	);
 
-	const customExtensions = [keybindings];
+	// Bump the run id the instant the document changes (the editor's on:change is debounced
+	// 300ms, too slow): this invalidates error messages still arriving from the previous run,
+	// so a now-stale line number can't be (re-)highlighted while the user types.
+	const trackEdits = EditorView.updateListener.of((update) => {
+		if (update.docChanged) editorState.runId++;
+	});
+
+	const customExtensions = [keybindings, trackEdits];
 
 	function onEditorChange() {
 		clearErrorHighlight(editorState.editorView);

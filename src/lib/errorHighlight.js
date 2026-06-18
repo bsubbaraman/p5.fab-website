@@ -7,7 +7,10 @@ const clearErrorLine = StateEffect.define();
 const errorLineField = StateField.define({
     create() { return Decoration.none; },
     update(decorations, tr) {
-        decorations = decorations.map(tr.changes);
+        // Any edit makes the error's line stale, so drop the highlight immediately rather
+        // than mapping it onto whatever line the edit shifts it to. (The editor's on:change
+        // is debounced 300ms, so we can't rely on clearErrorHighlight() to do this in time.)
+        decorations = tr.docChanged ? Decoration.none : decorations.map(tr.changes);
         for (const e of tr.effects) {
             if (e.is(addErrorLine)) {
                 decorations = Decoration.none.update({

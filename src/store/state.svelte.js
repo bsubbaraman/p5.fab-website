@@ -48,6 +48,17 @@ export const editorState = $state({
     },
     printAlert: null,
     lastRunCode: null,
+    // Monotonic id of the current run. Bumped on every run AND every edit; the wrapped sketch
+    // stamps each error message with the id it was evaluated under. A message whose id doesn't
+    // match the current one comes from a superseded run — a still-running previous sketch, a
+    // stale frame arriving just after a re-run, or any error after an edit — and is ignored.
+    // See messageError. (Replaces tracking edits/highlight-staleness with separate flags.)
+    runId: 0,
+    // True when the most recent run failed to parse. The previous sketch keeps running (and
+    // may keep logging); without this its stale output would overwrite the syntax error in
+    // the console. Also makes evalSketch leave the running sketch alone. Set in injectTryCatch,
+    // reset in evalSketch.
+    runHadSyntaxError: false,
     staleCodeModal: false,
     staleGcodeDownloadModal: false,
     isParsing: false,

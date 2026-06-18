@@ -42,7 +42,7 @@ export function setupMessages() {
             parsing_complete: messageParsingComplete,
         };
         if (messageSwitch[message.type]) {
-            messageSwitch[message.type](message.body, message.line);
+            messageSwitch[message.type](message.body, message.line, message.runId);
         }
     });
 
@@ -105,8 +105,13 @@ export function setupMessages() {
         console.log(messageBody);
     }
 
-    function messageError(messageBody, line) {
-        console.debug('messageError:', messageBody);
+    function messageError(messageBody, line, runId) {
+        // Ignore errors stamped with a superseded run id: a previous sketch that's still
+        // running (per-frame draw errors), a stale frame arriving just after a re-run, or any
+        // error after an edit. Their message and line number no longer match the current code.
+        // (A syntax-error run bumps runId but leaves the old sketch running, so this also keeps
+        // a stale runtime error from clobbering the displayed syntax error.)
+        if (runId !== editorState.runId) return;
         setOutput(false, [{ type: 'error', body: messageBody }]);
         if (line && editorState.editorView) {
             highlightErrorLine(editorState.editorView, line);
@@ -114,6 +119,9 @@ export function setupMessages() {
     }
 
     function messageOutput(messageBody) {
+        // Same as messageError: while a syntax error is shown, suppress stale output from the
+        // previous sketch so it doesn't overwrite the syntax error in the console.
+        if (editorState.runHadSyntaxError) return;
         // TODO: Should also be getting the line of the sketch that the log statement originated from
         // TODO: Better way of detecting P5 friendly errors
         console.debug(messageBody);
