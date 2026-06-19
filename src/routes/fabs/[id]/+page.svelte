@@ -2,13 +2,24 @@
 	import Header from '../../../components/Header.svelte';
 	import { store } from '../../../store/state.svelte.js';
 	import { db } from '../../../dbConfig';
-	import { getDoc, doc, updateDoc, deleteDoc, increment, arrayRemove, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
+	import {
+		getDoc,
+		doc,
+		updateDoc,
+		deleteDoc,
+		increment,
+		arrayRemove,
+		deleteField,
+		collection,
+		query,
+		where,
+		getDocs
+	} from 'firebase/firestore';
 	import { ref, listAll, deleteObject } from 'firebase/storage';
 	import { storage } from '../../../dbConfig';
 	import { toggleAuthContainer } from '$lib/events/auth';
 	import { getPostFromDB } from '$lib/dbLoadSave';
 	import ImageGallery from '../../../components/ImageGallery.svelte';
-	import RemixPane from '../../../components/RemixPane.svelte';
 	import Share from '../../../components/Share.svelte';
 
 	let { data } = $props();
@@ -57,6 +68,10 @@
 		const d = typeof ts?.toDate === 'function' ? ts.toDate() : new Date(ts);
 		const month = d.toLocaleString('default', { month: 'long' });
 		return `${month} ${d.getDate()} ${d.getFullYear()}`;
+	}
+
+	function scrollToForks() {
+		document.getElementById('forks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
 	async function likePost() {
@@ -157,7 +172,7 @@
 					<ImageGallery bind:current={galleryIndex} images={postData.files} />
 				</div>
 				<div class="community">
-					<button onclick={likePost}>
+					<button class="act act-narrow" onclick={likePost}>
 						{#if store.user && store.favorites.includes(objectID)}
 							<i class="fa-solid fa-heart"></i>
 						{:else}
@@ -165,20 +180,33 @@
 						{/if}
 						{postData.favorites}
 					</button>
-					<button>
+					<a class="act act-wide" href="/sketch/{objectID}">
+						<button>
+							<i class="fa-solid fa-code"></i>
+							Editor
+						</button>
+					</a>
+					<button class="act act-narrow" onclick={scrollToForks}>
 						<i class="fa-solid fa-code-fork"></i>
 						{forkCount}
 					</button>
-					<a href="/sketch/{objectID}">
-						<button>
-							<i class="fa-solid fa-code"></i>
-							Open in editor
+					{#if postData.isFork || forkCount > 0}
+						<a class="act act-wide" href="/graph/{objectID}">
+							<button>
+								<i class="fa-solid fa-hexagon-nodes"></i>
+								Remix graph
+							</button>
+						</a>
+					{:else}
+						<button class="act act-wide" disabled>
+							<i class="fa-solid fa-hexagon-nodes"></i>
+							Remix graph
 						</button>
-					</a>
-					<a href="/timeline/{objectID}">
+					{/if}
+					<a class="act act-wide" href="/timeline/{objectID}">
 						<button disabled={postData.projectLog ? false : true}>
 							<i class="fa-solid fa-film"></i>
-							Open Timeline
+							Timeline
 						</button>
 					</a>
 					<!-- <button disabled={postData.fabscription ? false : true}>
@@ -233,7 +261,7 @@
 						</div>
 					</div>
 				{/if}
-				<div class="forks">
+				<div class="forks" id="forks">
 					<h3>Forks</h3>
 					{#if !forkCount}
 						No forks yet! Wanna make one?
@@ -263,9 +291,6 @@
 					{/if}
 				</div>
 			</div>
-			<!-- {#if postData.isFork || postData.forks}
-				<RemixPane />
-			{/if} -->
 		{:else if status === 'notfound'}
 			This sketch doesn't exist.
 		{:else if status === 'error'}
@@ -304,11 +329,36 @@
 	}
 
 	.community {
-		text-align: center;
+		display: grid;
+		grid-template-columns: repeat(12, 1fr);
+		gap: 10px;
+		max-width: 400px;
+		margin: 0 auto;
 	}
 
 	.community button {
 		font-family: 'Roboto Mono', monospace;
+	}
+
+	/* Top row: likes (left) · editor (center, longest) · forks (right) — 3 + 6 + 3 = 12.
+	   Bottom row: remix graph · timeline — 6 + 6 = 12. Both rows fill the same width, so
+	   the block stays edge-aligned and centered under the images. */
+	.community .act {
+		width: 100%;
+		margin: 0;
+	}
+
+	.community .act-narrow {
+		grid-column: span 3;
+	}
+
+	.community .act-wide {
+		grid-column: span 6;
+	}
+
+	.community .act button {
+		width: 100%;
+		margin: 0;
 	}
 
 	.forks {
