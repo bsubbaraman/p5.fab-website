@@ -105,12 +105,24 @@ function injectTryCatch(sketchCode, prefixLines, runId) {
       const lineOffset = evalBodyLine - originalBodyLine;
 
       const bodyContent = functionBody.startsWith('\n') ? functionBody.slice(1) : functionBody;
+      // Wrap each top-level function body in try/catch so a runtime error reports the line
+      // it happened on. The sketch runs via eval() in preview.html, so the raw line we
+      // recover is relative to the eval'd string (line 1 = its first line); subtracting
+      // lineOffset maps it back to the user's source line. Recovering that raw line is
+      // browser-specific:
+      //   - Chromium: stack frames read `... <anonymous>:LINE:COL`
+      //   - Firefox:  stack frames read `... line N > eval:LINE:COL`  (the ` eval:` branch)
+      //   - Safari/WebKit: no eval line in error.stack and no //# sourceURL support, but the
+      //     Error object carries the throw location directly as e.line — used as the fallback.
+      // Each error is stamped with runId so messageError can ignore reports from a superseded
+      // run (a previous sketch still looping, or a stale frame just after a re-run).
       nodeBody =
         functionDeclaration +
         '\ntry {\n' + bodyContent +
         `\n}\ncatch (e){\n` +
         `const __m = e.stack && e.stack.match(/(?:<anonymous>| eval):(\\d+):\\d+/);\n` +
-        `const __ln = __m ? parseInt(__m[1]) - ${lineOffset} : null;\n` +
+        `const __raw = __m ? parseInt(__m[1]) : (typeof e.line === 'number' ? e.line : null);\n` +
+        `const __ln = __raw != null ? __raw - ${lineOffset} : null;\n` +
         `window.parent.postMessage({ type: "error", body: e.toString(), line: __ln, runId: ${runId} }, '*');\n` +
         `}\n}\n`;
     }
