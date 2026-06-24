@@ -267,7 +267,7 @@
 		ender3: {
 			name: 'ender3',
 			baudRate: 115200,
-			nozzleDiameter: 0.8,
+			nozzleDiameter: 0.4,
 			filamentDiameter: 1.75,
 			maxX: 220,
 			maxY: 220,
@@ -343,7 +343,7 @@
 		baudRate: 115200,
 		maxNozzleTemp: 280,
 		maxBedTemp: 130, // °C
-		nozzleDiameter: 0.8,
+		nozzleDiameter: 0.4,
 		filamentDiameter: 1.75,
 		maxX: 220,
 		maxY: 220,
@@ -429,24 +429,19 @@
 				const maxParams = paramStr.trim() ? paramStr.split(',').length : 0;
 				const received = args.length;
 				const word = received === 1 ? 'argument' : 'arguments';
+				let body;
 				if (received < names.length) {
-					window.parent.postMessage(
-						{
-							type: 'output',
-							body: `p5.fab says: ${prop}() received ${received} ${word}, expected at least ${names.length}.`
-						},
-						'*'
-					);
-					return;
+					body = `p5.fab says: ${prop}() received ${received} ${word}, expected at least ${names.length}.`;
+				} else if (maxParams > 0 && received > maxParams) {
+					body = `p5.fab says: ${prop}() received ${received} ${word}, expected no more than ${maxParams}.`;
 				}
-				if (maxParams > 0 && received > maxParams) {
-					window.parent.postMessage(
-						{
-							type: 'output',
-							body: `p5.fab says: ${prop}() received ${received} ${word}, expected no more than ${maxParams}.`
-						},
-						'*'
-					);
+				if (body) {
+					// Only surface each friendly error once per sketch run, so a bad
+					// call inside fabDraw() doesn't spam the console every frame.
+					if (!target._fesWarned.has(body)) {
+						target._fesWarned.add(body);
+						window.parent.postMessage({ type: 'output', body }, '*');
+					}
 					return;
 				}
 				return val.apply(target, args);
@@ -591,6 +586,7 @@
 			this._stateStack = [];
 			this._deprecationWarned = new Set();
 			this._boundsWarned = new Set();
+			this._fesWarned = new Set();
 			this._allowHighTemp = false; // safety ceiling re-armed each run; opt out per draw
 		}
 
