@@ -4079,7 +4079,7 @@
 		 * Begin an extruded path built from `vertex()` points.
 		 *
 		 * The first `vertex()` after `beginShape()` positions the nozzle at the start of the
-		 * path; every following `vertex()` extrudes to the next point. `mode` chooses how that
+		 * path; every following `vertex()` extrudes to the next point. `mode` chooses how the
 		 * first move is made i.e. how the nozzle reaches the path start:
 		 *
 		 * <ul>
