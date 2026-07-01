@@ -363,8 +363,23 @@
 		maxAccelerationE: 5000,
 		printAcceleration: 500,
 		travelAcceleration: 1000,
+		minSegmentTime: 20, // ms — floor on move duration to avoid serial-starve stutter
 		autoConnect: true
 	};
+
+	// Lead-in modes for beginShape(): how the first vertex reaches the path start.
+	// Each maps to the like-named motion primitive (travelTo/retractTo/moveTo/extrudeTo).
+	const TRAVEL = 'travel';
+	const RETRACT = 'retract';
+	const MOVE = 'move';
+	const EXTRUDE = 'extrude';
+
+	// Expose the lead-in modes as p5-style globals (like CLOSE/WEBGL) so sketches can
+	// write beginShape(RETRACT). Don't clobber existing p5 constants (p5 already defines
+	// MOVE === 'move'); beginShape() also accepts the raw string values as a fallback.
+	for (const [_name, _value] of Object.entries({ TRAVEL, RETRACT, MOVE, EXTRUDE })) {
+		if (p5.prototype[_name] === undefined) p5.prototype[_name] = _value;
+	}
 
 	const FAB_PARAM_NAMES = Object.freeze({
 		// Maintained by hand for the simple friendly error system
@@ -385,7 +400,6 @@
 		moveZ: ['dz'],
 		translate: ['dx', 'dy', 'dz'],
 		// Extrusion
-		circle: ['x', 'y', 'z', 'd'],
 		extrudeTo: ['x', 'y', 'z'],
 		extrudeToX: ['x'],
 		extrudeToY: ['y'],
@@ -396,6 +410,18 @@
 		extrudeXY: ['dx', 'dy'],
 		extrudeY: ['dy'],
 		extrudeZ: ['dz'],
+		// Structure
+		vertex: ['x', 'y'],
+		// Shapes
+		circle: ['x', 'y', 'z', 'd'],
+		ellipse: ['x', 'y', 'z', 'w'],
+		square: ['x', 'y', 'z', 's'],
+		rect: ['x', 'y', 'z', 'w'],
+		ngon: ['x', 'y', 'z', 'd', 'n'],
+		triangle: ['x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'z'],
+		quad: ['x1', 'y1', 'x2', 'y2', 'x3', 'y3', 'x4', 'y4', 'z'],
+		rectMode: ['mode'],
+		ellipseMode: ['mode'],
 		// Print control
 		setTemps: ['tNozzle', 'tBed'],
 		speed: ['v'],
@@ -405,6 +431,7 @@
 		travelAcceleration: ['v'],
 		retractAmount: ['mm'],
 		zHopHeight: ['mm'],
+		minSegmentTime: ['ms'],
 		// Configuration
 		maxSpeedX: ['v'],
 		maxSpeedY: ['v'],
@@ -514,6 +541,7 @@
 			this._defaultExtrusionMultiplier = config.extrusionMultiplier;
 			this._defaultRetractAmount = config.retractAmount;
 			this._defaultZHopHeight = config.zHopHeight;
+			this._defaultMinSegmentTime = config.minSegmentTime ?? 20;
 			this._defaultPrintSpeed = config.printSpeed;
 			this._defaultTravelSpeed = config.travelSpeed;
 			this._defaultMaxSpeedX = config.maxSpeedX;
@@ -563,6 +591,7 @@
 			this._extrusionMultiplier = this._defaultExtrusionMultiplier;
 			this._retractAmount = this._defaultRetractAmount;
 			this._zHopHeight = this._defaultZHopHeight;
+			this._minSegmentTime = this._defaultMinSegmentTime;
 			this._printSpeed = this._defaultPrintSpeed;
 			this._travelSpeed = this._defaultTravelSpeed;
 			this._maxSpeedX = this._defaultMaxSpeedX;
@@ -587,6 +616,11 @@
 			this._deprecationWarned = new Set();
 			this._boundsWarned = new Set();
 			this._fesWarned = new Set();
+			this._shapeStarted = false;
+			this._shapeFirstVertex = null;
+			this._shapeLeadIn = TRAVEL;
+			this._rectMode = 'corner'; // p5 default
+			this._ellipseMode = 'center'; // p5 default
 			this._allowHighTemp = false; // safety ceiling re-armed each run; opt out per draw
 		}
 
@@ -1234,6 +1268,52 @@
 		}
 
 		/**
+		 * Set the minimum time (in milliseconds) any single move is allowed to take.
+		 *
+		 * Short, fast moves can finish faster than the serial link can send the next command,
+		 * starving the printer's planner buffer and causing stuttering. This clamps the feedrate
+		 * so each move lasts at least `ms`, keeping motion smooth. It only ever lowers the
+		 * feedrate, and only for moves shorter than `feedrate * ms`; longer moves are unaffected.
+		 * Set to `0` to disable. Mirrors Marlin's `DEFAULT_MINSEGMENTTIME` (default 20ms).
+		 * Resets to the printer profile default at the start of each `fabDraw()` call.
+		 * Use `push()` / `pop()` to scope a temporary change.
+		 * @group Print control
+		 * @param {number} ms - Minimum move duration in milliseconds. `0` disables the clamp.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *
+		 *   // Loosen the clamp for a fast machine (or pass 0 to disable it)
+		 *   fab.minSegmentTime(10);
+		 *   fab.circle(fab.centerX, fab.centerY, 0.2, 10); // small circle stays smooth
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		minSegmentTime(ms) {
+			const n = parseFloat(ms);
+			if (isNaN(n) || n < 0) {
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: minSegmentTime must be >= 0 (got ${ms}) — keeping ${this._minSegmentTime}.`
+					},
+					'*'
+				);
+				return;
+			}
+			this._minSegmentTime = n;
+		}
+
+		/**
 		 * Begins a command group that contains its own printing state.
 		 *
 		 * By default, printing parameters (e.g., `extrusionMultiplier()`, `printSpeed())`) and
@@ -1312,7 +1392,10 @@
 				maxAccelerationZ: this._maxAccelerationZ,
 				maxAccelerationE: this._maxAccelerationE,
 				printAcceleration: this._printAcceleration,
-				travelAcceleration: this._travelAcceleration
+				travelAcceleration: this._travelAcceleration,
+				minSegmentTime: this._minSegmentTime,
+				rectMode: this._rectMode,
+				ellipseMode: this._ellipseMode
 			});
 		}
 
@@ -1397,6 +1480,9 @@
 			this._maxAccelerationE = state.maxAccelerationE;
 			this._printAcceleration = state.printAcceleration;
 			this._travelAcceleration = state.travelAcceleration;
+			this._minSegmentTime = state.minSegmentTime;
+			this._rectMode = state.rectMode;
+			this._ellipseMode = state.ellipseMode;
 			this._setMaxSpeeds();
 			this._setMaxAccelerations();
 		}
@@ -2555,17 +2641,19 @@
 			gcodeY = bounded.y;
 			gcodeZ = bounded.z;
 
-			// Compute E from the physical distance traveled (gcode space), applying extrusionMultiplier.
+			// Physical distance traveled (gcode space) — used for auto-E and the min-segment-time clamp.
+			const moveDist = sqrt(
+				(parseFloat(gcodeX) - this._lastGcodePosition.x) ** 2 +
+					(parseFloat(gcodeY) - this._lastGcodePosition.y) ** 2 +
+					(parseFloat(gcodeZ) - this._lastGcodePosition.z) ** 2
+			);
+
+			// Compute E from the distance traveled, applying extrusionMultiplier.
 			// If the user passes an explicit e value, use it as-is (no multiplier applied).
 			if (isExtrude && e === null) {
-				const dist = sqrt(
-					(parseFloat(gcodeX) - this._lastGcodePosition.x) ** 2 +
-						(parseFloat(gcodeY) - this._lastGcodePosition.y) ** 2 +
-						(parseFloat(gcodeZ) - this._lastGcodePosition.z) ** 2
-				);
 				e = parseFloat(
 					(
-						dist *
+						moveDist *
 						(this._nozzleDiameter / 2 / (this._filamentDiameter / 2)) ** 2 *
 						this._extrusionMultiplier
 					).toFixed(4)
@@ -2578,10 +2666,15 @@
 			this._lastGcodePosition.y = parseFloat(gcodeY);
 			this._lastGcodePosition.z = parseFloat(gcodeZ);
 
-			const feedrateMmMin =
-				v !== null
-					? this.mm_sec_to_mm_min(v)
-					: this.mm_sec_to_mm_min(isExtrude ? this._printSpeed : this._travelSpeed);
+			// Minimum segment time: don't let a short move finish faster than the serial link can
+			// feed the next command, which would drain the planner buffer and cause stuttering.
+			// Only ever lowers the feedrate, and only for moves shorter than feedrate * minSegmentTime.
+			let feedrateMmSec = v !== null ? v : isExtrude ? this._printSpeed : this._travelSpeed;
+			if (this._minSegmentTime > 0 && moveDist > 0) {
+				const maxForMinTime = moveDist / (this._minSegmentTime / 1000); // mm/sec
+				if (feedrateMmSec > maxForMinTime) feedrateMmSec = maxForMinTime;
+			}
+			const feedrateMmMin = this.mm_sec_to_mm_min(feedrateMmSec);
 
 			const moveType = isExtrude || e !== null ? 'G1' : 'G0';
 			this.setAbsolutePositionXYZ();
@@ -3509,15 +3602,171 @@
 			this._moveXYZE({ z, e, isExtrude: true, v, comment });
 		}
 
+		// Run the lead-in move that positions the nozzle at the start of a path.
+		// Shared by vertex() (first vertex) and the shape primitives via _strokePolyline.
+		_leadInTo(x, y, z, mode = TRAVEL) {
+			switch (mode) {
+				case RETRACT:
+					this.retractTo(x, y, z);
+					break;
+				case MOVE:
+					this.moveTo(x, y, z);
+					break;
+				case EXTRUDE:
+					this.extrudeTo(x, y, z);
+					break;
+				default: // TRAVEL
+					this.travelTo(x, y, z);
+			}
+		}
+
+		// Extrude an outline through `points` ({x, y}, coplanar at `z`): lead-in to the first
+		// point, extrude to the rest, optionally close back to the start. Shared by every shape
+		// primitive. Deliberately does NOT touch _shapeStarted / _shapeFirstVertex, so a shape
+		// drawn inside a user's open beginShape() can never clobber their path state.
+		_strokePolyline(points, z, { close = true, mode = TRAVEL } = {}) {
+			if (!points || points.length === 0) return;
+			this._leadInTo(points[0].x, points[0].y, z, mode);
+			for (let i = 1; i < points.length; i++) {
+				this.extrudeToXY(points[i].x, points[i].y);
+			}
+			if (close && points.length > 1) {
+				this.extrudeToXY(points[0].x, points[0].y);
+			}
+		}
+
+		// Sample `n` points evenly around an ellipse (radii rx, ry) centered at (cx, cy),
+		// starting at angle `rot` (radians). Shared by circle/ellipse (large n) and ngon.
+		_ellipsePoints(cx, cy, rx, ry, n, rot = 0) {
+			const points = [];
+			for (let i = 0; i < n; i++) {
+				const a = rot + (i / n) * Math.PI * 2;
+				points.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) });
+			}
+			return points;
+		}
+
+		// Resolve (a, b, c, d) to an ellipse center + radii per the active ellipseMode.
+		_ellipseCenter(a, b, c, d, mode) {
+			switch (mode) {
+				case 'radius':
+					return { cx: a, cy: b, rx: c, ry: d };
+				case 'corner':
+					return { cx: a + c / 2, cy: b + d / 2, rx: c / 2, ry: d / 2 };
+				case 'corners':
+					return {
+						cx: (a + c) / 2,
+						cy: (b + d) / 2,
+						rx: Math.abs(c - a) / 2,
+						ry: Math.abs(d - b) / 2
+					};
+				default: // center
+					return { cx: a, cy: b, rx: c / 2, ry: d / 2 };
+			}
+		}
+
+		// Resolve (a, b, c, d) to four rectangle corners per the active rectMode.
+		_rectCorners(a, b, c, d, mode) {
+			let x1, y1, x2, y2;
+			switch (mode) {
+				case 'center':
+					x1 = a - c / 2;
+					y1 = b - d / 2;
+					x2 = a + c / 2;
+					y2 = b + d / 2;
+					break;
+				case 'radius':
+					x1 = a - c;
+					y1 = b - d;
+					x2 = a + c;
+					y2 = b + d;
+					break;
+				case 'corners':
+					x1 = a;
+					y1 = b;
+					x2 = c;
+					y2 = d;
+					break;
+				default: // corner
+					x1 = a;
+					y1 = b;
+					x2 = a + c;
+					y2 = b + d;
+			}
+			return [
+				{ x: x1, y: y1 },
+				{ x: x2, y: y1 },
+				{ x: x2, y: y2 },
+				{ x: x1, y: y2 }
+			];
+		}
+
+		// Validate a rect/ellipse mode argument; warn once and keep the current value on bad input.
+		_validShapeMode(mode, fnName, allowed, current) {
+			const m = typeof mode === 'string' ? mode.toLowerCase() : mode;
+			if (allowed.includes(m)) return m;
+			const key = `${fnName}:${mode}`;
+			if (!this._fesWarned.has(key)) {
+				this._fesWarned.add(key);
+				window.parent.postMessage(
+					{
+						type: 'output',
+						body: `p5.fab says: ${fnName}() expects one of ${allowed.join(', ')}, got "${mode}". Keeping the current mode.`
+					},
+					'*'
+				);
+			}
+			return current;
+		}
+
 		/**
-		 * Extrude a circle with diameter `d` centered at (x, y) at the given Z height.
-		 * @group Extrusion
-		 * @param {number} x - Center X position in mm.
-		 * @param {number} y - Center Y position in mm.
-		 * @param {number} z - Z height in mm.
+		 * Extrude an ellipse outline at layer height `z`.
+		 *
+		 * The `(x, y)` anchor is interpreted per `ellipseMode()` (default `CENTER`). Draws an
+		 * outline only — there is no infill. Speed and extrusion come from the current
+		 * `printSpeed()` / `extrusionMultiplier()`; scope changes with `push()` / `pop()`, or use
+		 * `beginShape()` / `vertex()` to vary them along the path.
+		 * @group Shapes
+		 * @param {number} x - X position of the anchor in mm (interpreted per `ellipseMode`).
+		 * @param {number} y - Y position of the anchor in mm.
+		 * @param {number} z - Layer height in mm.
+		 * @param {number} w - Width in mm.
+		 * @param {number} [h=w] - Height in mm. Defaults to `w` (a circle).
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.ellipse(fab.centerX, fab.centerY, layerHeight, 60, 40);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		ellipse(x, y, z, w, h = w) {
+			const { cx, cy, rx, ry } = this._ellipseCenter(x, y, w, h, this._ellipseMode);
+			const n = Math.max(16, Math.ceil(Math.PI * 2 * Math.max(rx, ry)));
+			this._strokePolyline(this._ellipsePoints(cx, cy, rx, ry, n), z);
+		}
+
+		/**
+		 * Extrude a circle outline of diameter `d` at layer height `z`.
+		 *
+		 * A convenience wrapper for `ellipse(x, y, z, d, d)`; the `(x, y)` anchor follows
+		 * `ellipseMode()` (default `CENTER`). Outline only — no infill.
+		 * @group Shapes
+		 * @param {number} x - X position of the anchor in mm (interpreted per `ellipseMode`).
+		 * @param {number} y - Y position of the anchor in mm.
+		 * @param {number} z - Layer height in mm.
 		 * @param {number} d - Diameter in mm.
-		 * @param {number} [v] - Feedrate in mm/min.
-		 * @param {number|null} [e=null] - Extrusion amount per segment. Calculated automatically if null.
 		 * @example
 		 * function setup() {
 		 *   createCanvas(windowWidth, windowHeight, WEBGL);
@@ -3541,14 +3790,433 @@
 		 *   fab.render();
 		 * }
 		 */
-		circle(x, y, z, d, v, e = null) {
-			const r = d / 2;
-			const segments = Math.max(16, Math.ceil(Math.PI * d));
-			this.travelTo(x + r, y, z, v);
-			for (let i = 1; i <= segments; i++) {
-				const angle = (i / segments) * Math.PI * 2;
-				this.extrudeToXY(x + r * Math.cos(angle), y + r * Math.sin(angle), v, e);
+		circle(x, y, z, d) {
+			this.ellipse(x, y, z, d, d);
+		}
+
+		/**
+		 * Extrude a rectangle outline at layer height `z`.
+		 *
+		 * The `(x, y)` anchor is interpreted per `rectMode()` (default `CORNER`, i.e. top-left).
+		 * Outline only — no infill.
+		 * @group Shapes
+		 * @param {number} x - X position of the anchor in mm (interpreted per `rectMode`).
+		 * @param {number} y - Y position of the anchor in mm.
+		 * @param {number} z - Layer height in mm.
+		 * @param {number} w - Width in mm.
+		 * @param {number} [h=w] - Height in mm. Defaults to `w` (a square).
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.rect(50, 50, layerHeight, 80, 40);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		rect(x, y, z, w, h = w) {
+			this._strokePolyline(this._rectCorners(x, y, w, h, this._rectMode), z);
+		}
+
+		/**
+		 * Extrude a square outline with side `s` at layer height `z`.
+		 *
+		 * A convenience wrapper for `rect(x, y, z, s, s)`; the `(x, y)` anchor follows
+		 * `rectMode()` (default `CORNER`). Outline only — no infill.
+		 * @group Shapes
+		 * @param {number} x - X position of the anchor in mm (interpreted per `rectMode`).
+		 * @param {number} y - Y position of the anchor in mm.
+		 * @param {number} z - Layer height in mm.
+		 * @param {number} s - Side length in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.square(50, 50, layerHeight, 60);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		square(x, y, z, s) {
+			this.rect(x, y, z, s, s);
+		}
+
+		/**
+		 * Extrude a regular polygon with `n` sides, inscribed in a circle of diameter `d`.
+		 *
+		 * The `(x, y)` center follows `ellipseMode()` (default `CENTER`; `RADIUS` treats `d` as a
+		 * radius). `rotation` (radians) turns the polygon; at 0 the first vertex points along +X.
+		 * Outline only — no infill.
+		 * @group Shapes
+		 * @param {number} x - Center X position in mm (interpreted per `ellipseMode`).
+		 * @param {number} y - Center Y position in mm.
+		 * @param {number} z - Layer height in mm.
+		 * @param {number} d - Diameter of the circumscribing circle in mm.
+		 * @param {number} n - Number of sides (e.g. 6 for a hexagon).
+		 * @param {number} [rotation=0] - Rotation in radians.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.ngon(fab.centerX, fab.centerY, layerHeight, 60, 6); // hexagon
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		ngon(x, y, z, d, n, rotation = 0) {
+			const { cx, cy, rx, ry } = this._ellipseCenter(x, y, d, d, this._ellipseMode);
+			this._strokePolyline(this._ellipsePoints(cx, cy, rx, ry, n, rotation), z);
+		}
+
+		/**
+		 * Extrude a triangle outline through three corners, coplanar at layer height `z`.
+		 * Outline only — no infill.
+		 * @group Shapes
+		 * @param {number} x1 - First corner X in mm.
+		 * @param {number} y1 - First corner Y in mm.
+		 * @param {number} x2 - Second corner X in mm.
+		 * @param {number} y2 - Second corner Y in mm.
+		 * @param {number} x3 - Third corner X in mm.
+		 * @param {number} y3 - Third corner Y in mm.
+		 * @param {number} z - Layer height in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.triangle(40, 40, 100, 40, 70, 100, layerHeight);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		triangle(x1, y1, x2, y2, x3, y3, z) {
+			this._strokePolyline(
+				[
+					{ x: x1, y: y1 },
+					{ x: x2, y: y2 },
+					{ x: x3, y: y3 }
+				],
+				z
+			);
+		}
+
+		/**
+		 * Extrude a quadrilateral outline through four corners, coplanar at layer height `z`.
+		 * Outline only — no infill.
+		 * @group Shapes
+		 * @param {number} x1 - First corner X in mm.
+		 * @param {number} y1 - First corner Y in mm.
+		 * @param {number} x2 - Second corner X in mm.
+		 * @param {number} y2 - Second corner Y in mm.
+		 * @param {number} x3 - Third corner X in mm.
+		 * @param {number} y3 - Third corner Y in mm.
+		 * @param {number} x4 - Fourth corner X in mm.
+		 * @param {number} y4 - Fourth corner Y in mm.
+		 * @param {number} z - Layer height in mm.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.quad(40, 40, 110, 50, 100, 110, 30, 90, layerHeight);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		quad(x1, y1, x2, y2, x3, y3, x4, y4, z) {
+			this._strokePolyline(
+				[
+					{ x: x1, y: y1 },
+					{ x: x2, y: y2 },
+					{ x: x3, y: y3 },
+					{ x: x4, y: y4 }
+				],
+				z
+			);
+		}
+
+		/**
+		 * Set how the `(x, y)` and size arguments of `rect()` / `square()` are interpreted.
+		 *
+		 * <ul>
+		 * <li>`CORNER` (default): `(x, y)` is the top-left corner; `w`/`h` are the width/height.</li>
+		 * <li>`CORNERS`: `(x, y)` and `(w, h)` are two opposite corners of the rectangle.</li>
+		 * <li>`CENTER`: `(x, y)` is the center; `w`/`h` are the width/height.</li>
+		 * <li>`RADIUS`: `(x, y)` is the center; `w`/`h` are half the width/height.</li>
+		 * </ul>
+		 *
+		 * Follows `rectMode()` in p5.js. Resets to `CORNER` at the start of each `fabDraw()`;
+		 * scope a change with `push()` / `pop()`.
+		 * @group Shapes
+		 * @param {string} mode - `CORNER`, `CORNERS`, `CENTER`, or `RADIUS`.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const z = 0.2;
+		 *
+		 *   // Default CORNER: (x, y) is the top-left corner
+		 *   fab.rect(40, 40, z, 40, 30);
+		 *
+		 *   // CENTER: (x, y) is the middle of the rectangle
+		 *   fab.rectMode(CENTER);
+		 *   fab.rect(130, 60, z, 40, 30);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		rectMode(mode) {
+			this._rectMode = this._validShapeMode(
+				mode,
+				'rectMode',
+				['corner', 'corners', 'center', 'radius'],
+				this._rectMode
+			);
+		}
+
+		/**
+		 * Set how the `(x, y)` and size arguments of `ellipse()` / `circle()` / `ngon()` are interpreted.
+		 *
+		 * <ul>
+		 * <li>`CENTER` (default): `(x, y)` is the center; `w`/`h` (or `d`) are the full width/height (diameters).</li>
+		 * <li>`RADIUS`: `(x, y)` is the center; `w`/`h` (or `d`) are radii, so the shape is twice as large as in `CENTER`.</li>
+		 * <li>`CORNER`: `(x, y)` is the top-left of the bounding box; `w`/`h` are its width/height.</li>
+		 * <li>`CORNERS`: `(x, y)` and `(w, h)` are two opposite corners of the bounding box.</li>
+		 * </ul>
+		 *
+		 * Follows `ellipseMode()` in p5.js. Resets to `CENTER` at the start of each `fabDraw()`;
+		 * scope a change with `push()` / `pop()`.
+		 * @group Shapes
+		 * @param {string} mode - `CENTER`, `RADIUS`, `CORNER`, or `CORNERS`.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const z = 0.2;
+		 *
+		 *   // Default CENTER: d is a diameter -> 20mm-wide circle
+		 *   fab.circle(60, 60, z, 20);
+		 *
+		 *   // RADIUS: d is a radius -> 40mm-wide circle (twice as big)
+		 *   fab.ellipseMode(RADIUS);
+		 *   fab.circle(130, 60, z, 20);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		ellipseMode(mode) {
+			this._ellipseMode = this._validShapeMode(
+				mode,
+				'ellipseMode',
+				['center', 'radius', 'corner', 'corners'],
+				this._ellipseMode
+			);
+		}
+
+		/**
+		 * Begin an extruded path built from `vertex()` points.
+		 *
+		 * The first `vertex()` after `beginShape()` positions the nozzle at the start of the
+		 * path; every following `vertex()` extrudes to the next point. `mode` chooses how that
+		 * first move is made i.e. how the nozzle reaches the path start:
+		 *
+		 * <ul>
+		 * <li>`TRAVEL`: retract, z-hop, and re-prime (the default; like `travelTo()`)</li>
+		 * <li>`RETRACT`: retract and re-prime, no z-hop (like `retractTo()`)</li>
+		 * <li>`MOVE`: a plain move with no retraction or z-hop (like `moveTo()`)</li>
+		 * <li>`EXTRUDE`: extrude from the current position to the first point (like `extrudeTo()`)</li>
+		 * </ul>
+		 *
+		 * Call `endShape()` to finish, or `endShape(CLOSE)` to extrude back to the first vertex.
+		 * The functionality follows `beginShape()` / `vertex()` / `endShape()` in p5.js.
+		 * @group Structure
+		 * @param {string} [mode=TRAVEL] - Lead-in for the first vertex: `TRAVEL`, `RETRACT`, `MOVE`, or `EXTRUDE`.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   // Travel to the first point, then extrude a triangle and close it
+		 *   fab.beginShape();
+		 *   fab.vertex(60, 60, layerHeight);
+		 *   fab.vertex(140, 60);
+		 *   fab.vertex(100, 130);
+		 *   fab.endShape(CLOSE);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		beginShape(mode = TRAVEL) {
+			this._shapeLeadIn = mode;
+			this._shapeStarted = false;
+			this._shapeFirstVertex = null;
+		}
+
+		/**
+		 * Add a point to the current path (between `beginShape()` and `endShape()`).
+		 *
+		 * The first `vertex()` moves to the point using the lead-in chosen by `beginShape()`;
+		 * each later `vertex()` extrudes to the point. `z` is optional: supply it to change
+		 * layer height, or omit it to stay in the current z-plane (like `extrudeToXY()`).
+		 *
+		 * `vertex()` takes only coordinates. To vary speed or extrusion along a path, set
+		 * `printSpeed()` / `speed()` or `extrusionMultiplier()` between vertices. For a one-off
+		 * explicit extrusion amount, use e.g., `extrudeTo()`.
+		 * @group Structure
+		 * @param {number} x - Target X position in mm.
+		 * @param {number} y - Target Y position in mm.
+		 * @param {number} [z] - Target Z position in mm. Defaults to the current Z if omitted.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   // Extrude a stacked square, climbing one layer per loop
+		 *   fab.beginShape();
+		 *   for (let z = layerHeight; z < 20; z += layerHeight) {
+		 *     fab.vertex(60, 60, z);
+		 *     fab.vertex(140, 60);
+		 *     fab.vertex(140, 140);
+		 *     fab.vertex(60, 140);
+		 *   }
+		 *   fab.endShape(CLOSE);
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		vertex(x, y, z) {
+			const has3D = z !== undefined;
+			const resolvedZ = has3D ? z : this._plannedPosition.z;
+
+			if (!this._shapeStarted) {
+				this._shapeStarted = true;
+				this._shapeFirstVertex = { x, y, z: resolvedZ };
+				this._leadInTo(x, y, resolvedZ, this._shapeLeadIn);
+				return;
 			}
+
+			if (has3D) this.extrudeTo(x, y, z);
+			else this.extrudeToXY(x, y);
+		}
+
+		/**
+		 * Finish the current path started with `beginShape()`.
+		 *
+		 * Pass `CLOSE` to extrude a final segment back to the first vertex, closing the loop.
+		 * The functionality follows `endShape()` in p5.js.
+		 * @group Structure
+		 * @param {string} [mode] - Pass `CLOSE` to close the path back to the first vertex.
+		 * @example
+		 * function setup() {
+		 *   createCanvas(windowWidth, windowHeight, WEBGL);
+		 * }
+		 *
+		 * function fabDraw() {
+		 *   fab.autoHome();
+		 *   fab.setTemps(200, 60);
+		 *   const layerHeight = 0.2;
+		 *   fab.introLine(layerHeight);
+		 *
+		 *   fab.beginShape();
+		 *   fab.vertex(60, 60, layerHeight);
+		 *   fab.vertex(140, 60);
+		 *   fab.vertex(100, 130);
+		 *   fab.endShape(CLOSE); // extrude back to (60, 60)
+		 * }
+		 *
+		 * function draw() {
+		 *   background(255);
+		 *   fab.render();
+		 * }
+		 */
+		endShape(mode) {
+			const isClose = mode === 'close' || (typeof CLOSE !== 'undefined' && mode === CLOSE);
+			if (isClose && this._shapeFirstVertex) {
+				const v = this._shapeFirstVertex;
+				this.extrudeTo(v.x, v.y, v.z);
+			}
+			this._shapeStarted = false;
+			this._shapeFirstVertex = null;
 		}
 
 		/**
