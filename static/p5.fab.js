@@ -10,6 +10,8 @@
 // — is planned for v0.2.0.
 
 (function (global) {
+	'use strict';
+
 	/**
 	 * Use _log/_warn/_error throughout this file
 	 * so p5.fab internal messages always go to the browser devtools console,
@@ -473,6 +475,44 @@
 				}
 				return val.apply(target, args);
 			};
+		},
+
+		// The get trap validates calls; this guards writes — the two most common mistakes are
+		// assigning to a method (meant to call it) and assigning to a read-only getter.
+		set(target, prop, value) {
+			if (typeof target[prop] === 'function') {
+				// Assigning to a method shadows it and silently does nothing useful. Warn once
+				// (the mistake often sits inside a loop) and leave the method callable.
+				const key = `set:${prop}`;
+				if (!target._fesWarned.has(key)) {
+					target._fesWarned.add(key);
+					window.parent.postMessage(
+						{
+							type: 'output',
+							body: `p5.fab says: fab.${prop} is a function — did you mean fab.${prop}(${value})? Assigning to it has no effect.`
+						},
+						'*'
+					);
+				}
+				return true;
+			}
+			try {
+				// Real settable properties (nozzleDiameter, filamentDiameter, maxX/Y/Z) and any
+				// user-added fields assign as normal.
+				target[prop] = value;
+			} catch {
+				// Getter-only accessors (commands, centerX, isPrinting, …) throw on write under
+				// strict mode — surface a friendly read-only notice instead.
+				const key = `ro:${prop}`;
+				if (!target._fesWarned.has(key)) {
+					target._fesWarned.add(key);
+					window.parent.postMessage(
+						{ type: 'output', body: `p5.fab says: fab.${prop} is read-only.` },
+						'*'
+					);
+				}
+			}
+			return true;
 		}
 	};
 
