@@ -144,7 +144,9 @@
 		align-items: center;
 		text-align: center;
 		position: relative;
-		margin-right: 10px;
+		/* Align the rightmost item flush with the wave: wave inset (margin = 32px in the
+		   wave script) minus the last .menu-item's 10px right padding. */
+		margin-right: 22px;
 	}
 
 	.menu-item {
