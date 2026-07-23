@@ -5,6 +5,7 @@
 	import { evalSketch } from '$lib/repl.js';
 	import { clearErrorHighlight } from '$lib/errorHighlight.js';
 	import { setupMessages } from '$lib/setupMessages.js';
+	import { isWebSerialSupported } from '$lib/webserial.js';
 	import { keymap, EditorView } from '@codemirror/view';
 	import { javascript } from '@codemirror/lang-javascript';
 	import { acceptCompletion, completionStatus } from '@codemirror/autocomplete';
@@ -68,7 +69,7 @@
 
 	onMount(() => {
 		// setupMessages();
-		webSerialSupported = 'serial' in navigator;
+		webSerialSupported = isWebSerialSupported();
 	});
 </script>
 
@@ -80,7 +81,9 @@
 					href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API#browser_compatibility"
 					target="_blank"
 					rel="noopener noreferrer">WebSerial</a
-				>, which isn't supported in your browser. Try Chrome or Edge to connect to a printer.
+				>, which isn't supported in your browser. To connect to a printer, use Chrome or
+					Edge, or Firefox with <code>dom.serial.enabled</code> turned on in
+					<code>about:config</code>.
 				<br /> <br />
 				You can still edit code and save g-code from this browser.
 			</p>

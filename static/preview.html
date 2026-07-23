@@ -136,6 +136,26 @@
 			<button class="nav-arrow" id="arr-down" onclick="rotateCamera(0, -PI12)">▼</button>
 		</div>
 
+		<!-- Connect modal. Lives INSIDE the sandbox iframe on purpose: navigator.serial
+		     .requestPort() needs a user gesture in THIS frame, so the click must originate
+		     here — a parent-page modal couldn't provide it across the sandbox origin. The
+		     backdrop covers the preview pane; the card sits high in the view. -->
+		<div
+			id="connect-modal"
+			style="display: none; position: fixed; inset: 0; z-index: 99999; background: rgba(0, 0, 0, 0.45);"
+		>
+			<div
+				id="connect-card"
+				style="position: absolute; top: 12%; left: 50%; transform: translateX(-50%); max-width: 80%; background: white; border: 2px solid black; border-radius: 8px; padding: 20px 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); text-align: center; font-family: var(--font-mono, monospace);"
+			>
+				<div style="font-size: 15px; margin-bottom: 14px;">Connect your printer over USB</div>
+				<button
+					id="connect-overlay"
+					style="font-size: 17px; padding: 12px 20px; border: 2px solid black; border-radius: 6px; background: white; cursor: pointer; font-family: inherit;"
+				>🔌 Connect printer</button>
+			</div>
+		</div>
+
 		<script defer>
 			// Origin of the parent editor, passed as a query param so we can target
 			// replies precisely instead of broadcasting with '*'. Absent (=> '*') when
@@ -161,8 +181,37 @@
 				} else if (e.data?.type === 'get_gcode') {
 					const gcode = typeof fab !== 'undefined' && fab ? fab.gcode : '';
 					window.parent.postMessage({ type: 'gcode_data', gcode: gcode || '' }, PARENT_ORIGIN);
+				} else if (e.data?.type === 'arm_connect') {
+					armConnect();
 				}
 			});
+
+			// Web Serial's requestPort() needs a user gesture in THIS frame. The parent toolbar
+			// "Connect" is a gesture in the cross-origin parent and can't reach here, so it posts
+			// `arm_connect`; we surface a button whose click — a real gesture in the sandbox frame —
+			// calls requestPort(). Serial otherwise stays entirely owned by the sketch's fab.
+			let overlayWired = false;
+			function armConnect() {
+				if (window.fab && window.fab.connected) return; // already connected
+				const modal = document.getElementById('connect-modal');
+				const btn = document.getElementById('connect-overlay');
+				if (!modal || !btn) return;
+				modal.style.display = 'block';
+				if (overlayWired) return;
+				overlayWired = true;
+				btn.addEventListener('click', () => {
+					if (window.fab && fab.serial) fab.serial.requestPort();
+				});
+				// Click on the dimmed backdrop (outside the card) dismisses the modal.
+				modal.addEventListener('click', (e) => {
+					if (e.target === modal) modal.style.display = 'none';
+				});
+				if (window.fab && fab.serial) {
+					fab.serial.on('open', () => {
+						modal.style.display = 'none';
+					});
+				}
+			}
 
 			const PI12 = Math.PI / 12;
 

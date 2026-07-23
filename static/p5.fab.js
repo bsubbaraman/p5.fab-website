@@ -2291,8 +2291,7 @@
 		}
 
 		/**
-		 * Allow nozzle/bed temperatures above the default safety ceiling (280°C / 130°C),
-		 * e.g. for nylon or PC. Like other settings this resets at the start of every
+		 * Allow nozzle/bed temperatures above the default safety ceiling (by default, these are 280°C / 130°C for nozzle and bed). This is necessary when printing high-temp materials like nylon or PC. Like other settings, this resets at the start of every
 		 * fabDraw() (and on stopPrint()), so call it in fabDraw() before your high setTemps().
 		 * @group Print control
 		 */
@@ -2301,7 +2300,7 @@
 		}
 
 		/**
-		 * Re-arm the temperature safety ceiling after allowHighTemp(). (It also resets
+		 * This enforces the temperature safety ceiling after disabling it with `allowHighTemp(). (It also resets
 		 * automatically at the start of each fabDraw().)
 		 * @group Print control
 		 */
@@ -2446,6 +2445,9 @@
 		stopPrint() {
 			this._commandStream = [];
 			this._isPrinting = false;
+			// Tell the host the print ended. We can't rely on printStream()'s print_complete
+			// here — clearing _isPrinting stops onData from emitting 'ok', so that path never runs.
+			window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			fabDraw();
 		}
 
@@ -2480,6 +2482,7 @@
 			// Then reset local state + rebuild the viz, same as stopPrint().
 			this._commandStream = [];
 			this._isPrinting = false;
+			window.parent.postMessage({ type: 'fab_status', body: { event: 'print_complete' } }, '*');
 			fabDraw();
 		}
 
@@ -3692,7 +3695,7 @@
 				case 'radius':
 					return { cx: a, cy: b, rx: c, ry: d };
 				case 'corner':
-					return { cx: a + c / 2, cy: b + d / 2, rx: c / 2, ry: d / 2 };
+					return { cx: a + c / 2, cy: b - d / 2, rx: c / 2, ry: d / 2 }; // -d/2: +Y renders up, so CORNER anchor is the visual top-left
 				case 'corners':
 					return {
 						cx: (a + c) / 2,
@@ -3727,11 +3730,11 @@
 					x2 = c;
 					y2 = d;
 					break;
-				default: // corner
+				default: // corner (anchor = visual top-left; +Y renders up, so extend -Y)
 					x1 = a;
 					y1 = b;
 					x2 = a + c;
-					y2 = b + d;
+					y2 = b - d;
 			}
 			return [
 				{ x: x1, y: y1 },
@@ -3762,10 +3765,9 @@
 		/**
 		 * Extrude an ellipse outline at layer height `z`.
 		 *
-		 * The `(x, y)` anchor is interpreted per `ellipseMode()` (default `CENTER`). Draws an
-		 * outline only — there is no infill. Speed and extrusion come from the current
-		 * `printSpeed()` / `extrusionMultiplier()`; scope changes with `push()` / `pop()`, or use
-		 * `beginShape()` / `vertex()` to vary them along the path.
+		 * By default, `(x, y)` specifies the center of the ellipse, see
+		 * `ellipseMode()` for other ways to set the position. Speed and extrusion come from the current
+		 * `printSpeed()` / `extrusionMultiplier()`.
 		 * @group Shapes
 		 * @param {number} x - X position of the anchor in mm (interpreted per `ellipseMode`).
 		 * @param {number} y - Y position of the anchor in mm.
@@ -3800,8 +3802,10 @@
 		/**
 		 * Extrude a circle outline of diameter `d` at layer height `z`.
 		 *
-		 * A convenience wrapper for `ellipse(x, y, z, d, d)`; the `(x, y)` anchor follows
-		 * `ellipseMode()` (default `CENTER`). Outline only — no infill.
+		 * By default, `(x, y)` specifies the center of the circle, see
+		 * `ellipseMode()` for other ways to set the position.
+		 * Using `circle` is the same as creating an ellipse with
+		 * equal height and width (`ellipse(x, y, z, d, d)`).
 		 * @group Shapes
 		 * @param {number} x - X position of the anchor in mm (interpreted per `ellipseMode`).
 		 * @param {number} y - Y position of the anchor in mm.
@@ -3838,7 +3842,6 @@
 		 * Extrude a rectangle outline at layer height `z`.
 		 *
 		 * The `(x, y)` anchor is interpreted per `rectMode()` (default `CORNER`, i.e. top-left).
-		 * Outline only — no infill.
 		 * @group Shapes
 		 * @param {number} x - X position of the anchor in mm (interpreted per `rectMode`).
 		 * @param {number} y - Y position of the anchor in mm.
@@ -3871,8 +3874,8 @@
 		/**
 		 * Extrude a square outline with side `s` at layer height `z`.
 		 *
-		 * A convenience wrapper for `rect(x, y, z, s, s)`; the `(x, y)` anchor follows
-		 * `rectMode()` (default `CORNER`). Outline only — no infill.
+		 * Using `square` is the same as making a rectangle with equal side lengths ()`rect(x, y, z, s, s)`); the `(x, y)` anchor follows
+		 * `rectMode()` (default `CORNER`).
 		 * @group Shapes
 		 * @param {number} x - X position of the anchor in mm (interpreted per `rectMode`).
 		 * @param {number} y - Y position of the anchor in mm.
@@ -3906,7 +3909,6 @@
 		 *
 		 * The `(x, y)` center follows `ellipseMode()` (default `CENTER`; `RADIUS` treats `d` as a
 		 * radius). `rotation` (radians) turns the polygon; at 0 the first vertex points along +X.
-		 * Outline only — no infill.
 		 * @group Shapes
 		 * @param {number} x - Center X position in mm (interpreted per `ellipseMode`).
 		 * @param {number} y - Center Y position in mm.
@@ -3940,7 +3942,6 @@
 
 		/**
 		 * Extrude a triangle outline through three corners, coplanar at layer height `z`.
-		 * Outline only — no infill.
 		 * @group Shapes
 		 * @param {number} x1 - First corner X in mm.
 		 * @param {number} y1 - First corner Y in mm.
@@ -3981,7 +3982,6 @@
 
 		/**
 		 * Extrude a quadrilateral outline through four corners, coplanar at layer height `z`.
-		 * Outline only — no infill.
 		 * @group Shapes
 		 * @param {number} x1 - First corner X in mm.
 		 * @param {number} y1 - First corner Y in mm.
@@ -4033,8 +4033,7 @@
 		 * <li>`RADIUS`: `(x, y)` is the center; `w`/`h` are half the width/height.</li>
 		 * </ul>
 		 *
-		 * Follows `rectMode()` in p5.js. Resets to `CORNER` at the start of each `fabDraw()`;
-		 * scope a change with `push()` / `pop()`.
+		 * Follows `rectMode()` in p5.js. Resets to `CORNER` at the start of each `fabDraw()`.
 		 * @group Shapes
 		 * @param {string} mode - `CORNER`, `CORNERS`, `CENTER`, or `RADIUS`.
 		 * @example
@@ -4079,8 +4078,7 @@
 		 * <li>`CORNERS`: `(x, y)` and `(w, h)` are two opposite corners of the bounding box.</li>
 		 * </ul>
 		 *
-		 * Follows `ellipseMode()` in p5.js. Resets to `CENTER` at the start of each `fabDraw()`;
-		 * scope a change with `push()` / `pop()`.
+		 * Follows `ellipseMode()` in p5.js. Resets to `CENTER` at the start of each `fabDraw()`.
 		 * @group Shapes
 		 * @param {string} mode - `CENTER`, `RADIUS`, `CORNER`, or `CORNERS`.
 		 * @example
