@@ -1681,8 +1681,18 @@
 				_fab.serial.open({ baudRate: _fab.baudRate });
 			});
 
-			this.serial.on('requesterror', function () {
+			this.serial.on('requesterror', function (err) {
+				// A cancelled or empty port picker isn't a real error — don't spam the console.
+				if (err && (err.name === 'AbortError' || err.name === 'NotFoundError')) return;
 				_error('p5.fab: serial connection request failed.');
+			});
+
+			// Without this, a failed open() (port busy / held by another program or tab) is
+			// silently dropped: the port is "picked" but never opens, so `open` never fires.
+			this.serial.on('openerror', function (err) {
+				const m = (err && err.message) || '';
+				if (/already (open|opening)/i.test(m)) return; // reconnect race, not a failure
+				_error('p5.fab: could not open the serial port' + (m ? ' (' + m + ')' : '') + '.');
 			});
 
 			this.serial.on('data', this.onData);

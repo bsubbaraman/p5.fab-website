@@ -153,6 +153,10 @@
 					id="connect-overlay"
 					style="font-size: 17px; padding: 12px 20px; border: 2px solid black; border-radius: 6px; background: white; cursor: pointer; font-family: inherit;"
 				>🔌 Connect printer</button>
+				<div
+					id="connect-status"
+					style="margin-top: 12px; font-size: 13px; min-height: 1.1em; line-height: 1.4; color: #444;"
+				></div>
 			</div>
 		</div>
 
@@ -190,27 +194,131 @@
 			// "Connect" is a gesture in the cross-origin parent and can't reach here, so it posts
 			// `arm_connect`; we surface a button whose click — a real gesture in the sandbox frame —
 			// calls requestPort(). Serial otherwise stays entirely owned by the sketch's fab.
-			let overlayWired = false;
+			function connectEls() {
+				return {
+					modal: document.getElementById('connect-modal'),
+					btn: document.getElementById('connect-overlay')
+				};
+			}
+			function setConnectStatus(msg, isError) {
+				const s = document.getElementById('connect-status');
+				if (!s) return;
+				s.textContent = msg || '';
+				s.style.color = isError ? '#b00' : '#444';
+			}
+
+			// Toolbar "Connect" arms the modal. Always re-show it (never early-return on a
+			// stale `connected`), reset to a clean state, and re-enable the button so the user
+			// can just click again after a cancelled/failed attempt.
+			let connectWired = false;
 			function armConnect() {
-				if (window.fab && window.fab.connected) return; // already connected
-				const modal = document.getElementById('connect-modal');
-				const btn = document.getElementById('connect-overlay');
+				const { modal, btn } = connectEls();
 				if (!modal || !btn) return;
+				wireConnectOnce();
+				btn.disabled = false;
+				if (window.fab && window.fab.connected) {
+					setConnectStatus('Already connected — click to reconnect or pick another port.', false);
+				} else {
+					setConnectStatus('');
+				}
 				modal.style.display = 'block';
-				if (overlayWired) return;
-				overlayWired = true;
-				btn.addEventListener('click', () => {
-					if (window.fab && fab.serial) fab.serial.requestPort();
-				});
-				// Click on the dimmed backdrop (outside the card) dismisses the modal.
+			}
+
+			function wireConnectOnce() {
+				if (connectWired) return;
+				connectWired = true;
+				const { modal, btn } = connectEls();
+				// Dismiss on backdrop (outside the card) click.
 				modal.addEventListener('click', (e) => {
 					if (e.target === modal) modal.style.display = 'none';
 				});
-				if (window.fab && fab.serial) {
-					fab.serial.on('open', () => {
+				btn.addEventListener('click', attemptConnect);
+			}
+
+			// One set of serial listeners per attempt, removed as soon as one fires (or on the
+			// next attempt) so they never stack across re-clicks. fab.serial persists across
+			// sketch re-runs, so listening on window.fab.serial is stable.
+			let activeConnect = null;
+			function clearConnect(serial) {
+				if (!activeConnect || !serial) return;
+				serial.off('open', activeConnect.onOpen);
+				serial.off('requesterror', activeConnect.onReqErr);
+				serial.off('openerror', activeConnect.onOpenErr);
+				clearTimeout(activeConnect.timer);
+				activeConnect = null;
+			}
+			function waitForClose(serial, timeoutMs) {
+				return new Promise((resolve) => {
+					if (!serial.portOpen) return resolve();
+					let done = false;
+					const finish = () => {
+						if (done) return;
+						done = true;
+						serial.off('close', finish);
+						resolve();
+					};
+					serial.on('close', finish);
+					setTimeout(finish, timeoutMs);
+				});
+			}
+
+			async function attemptConnect() {
+				const { modal, btn } = connectEls();
+				const fab = window.fab;
+				if (!fab || !fab.serial) {
+					setConnectStatus('Sketch not ready — run your sketch, then connect.', true);
+					return;
+				}
+				const serial = fab.serial;
+				clearConnect(serial); // drop any listeners left by a prior attempt
+				btn.disabled = true;
+
+				// If a (possibly stale) port is open, close it first so we can cleanly re-open.
+				if (serial.portOpen) {
+					setConnectStatus('Reconnecting…', false);
+					try {
+						serial.close();
+					} catch (e) {}
+					await waitForClose(serial, 1200);
+				}
+
+				setConnectStatus('Select your printer in the browser prompt…', false);
+
+				const done = (fn) => {
+					clearConnect(serial);
+					btn.disabled = false;
+					if (fn) fn();
+				};
+				const onOpen = () =>
+					done(() => {
+						setConnectStatus('');
 						modal.style.display = 'none';
 					});
-				}
+				const onReqErr = () => done(() => setConnectStatus('No port selected — click 🔌 to try again.', true));
+				const onOpenErr = (detail) =>
+					done(() => {
+						const m = (detail && detail.message) || '';
+						if (/already (open|opening)/i.test(m)) {
+							setConnectStatus('That port is already connected.', false);
+							modal.style.display = 'none';
+						} else {
+							setConnectStatus(
+								'Couldn’t open that port — it may be in use by another program or browser tab. Close those, then click 🔌 to try again.',
+								true
+							);
+						}
+					});
+				// Safety net: if nothing fires (e.g. picker left open), re-enable the button so
+				// the user is never stuck. Doesn't remove listeners, so a late open still hides.
+				const timer = setTimeout(() => {
+					btn.disabled = false;
+				}, 30000);
+
+				activeConnect = { onOpen, onReqErr, onOpenErr, timer };
+				serial.on('open', onOpen);
+				serial.on('requesterror', onReqErr);
+				serial.on('openerror', onOpenErr);
+				serial.requestPort();
 			}
 
 			const PI12 = Math.PI / 12;
