@@ -4550,11 +4550,7 @@
 	}
 	global.windowResized = windowResized;
 
-	window.addEventListener('message', function (e) {
-		if (e.origin !== window.location.origin && e.origin !== 'null') return;
-		if (!e.data || e.data.type !== 'fab_command') return;
-		if (typeof fab !== 'undefined' && fab.serial) {
-			fab.serial.write(e.data.body.gcode + '\n');
-		}
-	});
+	// `fab_command` (manual G-code from the editor info bar) is handled in preview.html,
+	// which validates the parent origin. A listener here used a same-origin check that the
+	// cross-origin sandbox parent can't satisfy, so it silently dropped every command.
 })(typeof window !== 'undefined' ? window : globalThis);

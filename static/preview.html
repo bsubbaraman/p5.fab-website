@@ -185,6 +185,14 @@
 				} else if (e.data?.type === 'get_gcode') {
 					const gcode = typeof fab !== 'undefined' && fab ? fab.gcode : '';
 					window.parent.postMessage({ type: 'gcode_data', gcode: gcode || '' }, PARENT_ORIGIN);
+				} else if (e.data?.type === 'fab_command') {
+					// Manual G-code from the editor info bar (positions, temps). Routed here
+					// like every other parent message so it clears the PARENT_ORIGIN check —
+					// the old listener in p5.fab.js checked window.location.origin, which the
+					// cross-origin sandbox parent never matches.
+					if (typeof fab !== 'undefined' && fab && fab.serial) {
+						fab.serial.write(e.data.body.gcode + '\n');
+					}
 				} else if (e.data?.type === 'arm_connect') {
 					armConnect();
 				}
